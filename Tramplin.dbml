@@ -1,0 +1,679 @@
+Enum user_role {
+  applicant
+  employer
+  curator
+}
+
+Enum visibility_scope {
+  private
+  contacts_only
+  employers_only
+  authenticated_public
+}
+
+Enum location_precision {
+  exact_address
+  city_only
+}
+
+Enum media_file_status {
+  pending
+  uploaded
+  failed
+  deleted
+}
+
+Enum media_file_purpose {
+  avatar
+  resume
+  company_logo
+  company_banner
+  company_media
+  opportunity_cover
+  opportunity_media
+  verification_evidence
+  other
+}
+
+Enum company_member_role {
+  owner
+  recruiter
+  hr
+  manager
+}
+
+Enum company_membership_status {
+  pending
+  approved
+  rejected
+  revoked
+}
+
+Enum company_verification_status {
+  pending
+  under_review
+  verified
+  rejected
+  expired
+}
+
+Enum verification_method {
+  corporate_email
+  inn
+  official_website
+  manual_review
+}
+
+Enum verification_request_status {
+  pending
+  under_review
+  approved
+  rejected
+  needs_changes
+}
+
+Enum opportunity_type {
+  internship
+  vacancy
+  mentor_program
+  event
+}
+
+Enum opportunity_status {
+  draft
+  planned
+  active
+  closed
+  rejected
+  archived
+}
+
+Enum participation_format {
+  offline
+  hybrid
+  remote
+  online
+}
+
+Enum employment_type {
+  full_time
+  part_time
+  project
+  contract
+}
+
+Enum experience_level {
+  trainee
+  junior
+  middle
+  senior
+}
+
+Enum application_status {
+  submitted
+  reviewing
+  reserve
+  accepted
+  rejected
+  withdrawn
+}
+
+Enum connection_status {
+  pending
+  accepted
+  rejected
+  blocked
+}
+
+Enum tag_type {
+  technology
+  role
+  domain
+  level
+  employment_type
+  format
+  custom
+}
+
+Enum link_type {
+  apply
+  info
+  registration
+  social
+  other
+}
+
+Enum moderation_status {
+  pending
+  approved
+  rejected
+  needs_changes
+}
+
+Enum moderation_target_type {
+  company
+  profile
+  opportunity
+  tag
+  media
+  verification
+}
+
+Enum notification_type {
+  recommendation_received
+  application_status_changed
+  employer_message
+  employer_broadcast
+  system
+}
+
+Enum notification_channel {
+  in_app
+  email
+}
+
+Enum notification_delivery_status {
+  queued
+  sent
+  delivered
+  failed
+  cancelled
+}
+
+Enum notification_source_type {
+  recommendation
+  application
+  campaign
+  system
+}
+
+Enum notification_campaign_audience_type {
+  single_applicant
+  selected_applicants
+  all_applicants_of_opportunity
+}
+
+Enum notification_campaign_status {
+  draft
+  scheduled
+  processing
+  sent
+  cancelled
+}
+
+Table users {
+  id uuid [pk]
+  email varchar(255) [not null, unique]
+  password_hash varchar(255) [not null]
+  display_name varchar(120) [not null]
+  role user_role [not null]
+  email_verified_at timestamptz
+  is_active boolean [not null, default: true]
+  avatar_media_id uuid [ref: > media_files.id]
+  token_version int [not null, default: 0]
+  password_changed_at timestamptz
+  last_login_at timestamptz
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table user_ui_settings {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  settings_json jsonb [not null]
+  schema_version int [not null, default: 1]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (user_id) [unique]
+  }
+}
+
+Table media_files {
+  id uuid [pk]
+  file_key varchar(500) [not null]
+  original_name varchar(255)
+  mime_type varchar(100)
+  file_size int
+  purpose media_file_purpose
+  uploaded_by_user_id uuid [ref: > users.id]
+  status media_file_status [not null, default: 'pending']
+  etag varchar(255)
+  completed_at timestamptz
+  deleted_at timestamptz
+  created_at timestamptz [not null]
+
+  indexes {
+    (file_key) [unique]
+  }
+}
+
+Table locations {
+  id uuid [pk]
+  precision location_precision [not null]
+  country varchar(120) [not null]
+  region varchar(120)
+  city varchar(120) [not null]
+  address_line varchar(255)
+  postal_code varchar(20)
+  place_name varchar(255)
+  latitude decimal(9,6)
+  longitude decimal(9,6)
+  created_at timestamptz [not null]
+}
+
+Table tags {
+  id uuid [pk]
+  name varchar(120) [not null]
+  tag_type tag_type [not null]
+  is_system boolean [not null, default: false]
+  is_active boolean [not null, default: true]
+  created_by_user_id uuid [ref: > users.id]
+  created_at timestamptz [not null]
+
+  indexes {
+    (name, tag_type) [unique]
+  }
+}
+
+Table curator_profiles {
+  user_id uuid [pk, ref: > users.id]
+  full_name varchar(255) [not null]
+  is_admin boolean [not null, default: false]
+  created_at timestamptz [not null]
+}
+
+Table applicant_profiles {
+  user_id uuid [pk, ref: > users.id]
+  last_name varchar(120) [not null]
+  first_name varchar(120) [not null]
+  middle_name varchar(120)
+  university_name varchar(255)
+  faculty varchar(255)
+  program_name varchar(255)
+  study_year smallint
+  graduation_year smallint
+  city varchar(120)
+  about text
+  resume_media_id uuid [ref: > media_files.id]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table applicant_privacy_settings {
+  applicant_user_id uuid [pk, ref: > applicant_profiles.user_id]
+  profile_visibility visibility_scope [not null, default: 'authenticated_public']
+  resume_visibility visibility_scope [not null, default: 'contacts_only']
+  applications_visibility visibility_scope [not null, default: 'private']
+  contacts_visibility visibility_scope [not null, default: 'contacts_only']
+  show_career_interests boolean [not null, default: true]
+  allow_recommendations boolean [not null, default: true]
+  updated_at timestamptz [not null]
+}
+
+Table applicant_social_links {
+  id uuid [pk]
+  applicant_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  platform varchar(80) [not null] // GitHub, GitLab, VK, Telegram, personal_site
+  url varchar(500) [not null]
+  is_public boolean [not null, default: true]
+  created_at timestamptz [not null]
+}
+
+Table applicant_tags {
+  applicant_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  tag_id uuid [not null, ref: > tags.id]
+
+  indexes {
+    (applicant_user_id, tag_id) [pk]
+  }
+}
+
+Table employer_profiles {
+  user_id uuid [pk, ref: > users.id]
+  full_name varchar(255) [not null]
+  job_title varchar(120)
+  phone varchar(32)
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table companies {
+  id uuid [pk]
+  legal_name varchar(255) [not null]
+  brand_name varchar(255)
+  slug varchar(150) [not null, unique]
+  inn varchar(20) [unique]
+  description text
+  industry varchar(120)
+  website_url varchar(500)
+  corporate_email_domain varchar(120)
+  headquarters_location_id uuid [ref: > locations.id]
+  logo_media_id uuid [ref: > media_files.id]
+  banner_media_id uuid [ref: > media_files.id]
+  verification_status company_verification_status [not null, default: 'pending']
+  verified_at timestamptz
+  verified_by_curator_user_id uuid [ref: > curator_profiles.user_id]
+  created_by_user_id uuid [ref: > users.id]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table company_memberships {
+  id uuid [pk]
+  company_id uuid [not null, ref: > companies.id]
+  employer_user_id uuid [not null, ref: > employer_profiles.user_id]
+  invited_by_user_id uuid [ref: > employer_profiles.user_id]
+  status company_membership_status [not null, default: 'pending']
+  member_role company_member_role [not null]
+  is_primary_contact boolean [not null, default: false]
+  status_changed_by_user_id uuid [ref: > users.id]
+  status_comment text
+  status_updated_at timestamptz [not null]
+  approved_at timestamptz
+  updated_at timestamptz [not null]
+  created_at timestamptz [not null]
+
+  indexes {
+    (company_id, employer_user_id) [unique]
+    (company_id, status)
+    (employer_user_id, status)
+  }
+}
+
+Table company_social_links {
+  id uuid [pk]
+  company_id uuid [not null, ref: > companies.id]
+  platform varchar(80) [not null]
+  url varchar(500) [not null]
+}
+
+Table company_media {
+  id uuid [pk]
+  company_id uuid [not null, ref: > companies.id]
+  media_file_id uuid [not null, ref: > media_files.id]
+  title varchar(255)
+  sort_order int [not null, default: 0]
+  created_at timestamptz [not null]
+}
+
+Table verification_requests {
+  id uuid [pk]
+  company_id uuid [not null, ref: > companies.id]
+  submitted_by_user_id uuid [not null, ref: > users.id]
+  method verification_method [not null]
+  status verification_request_status [not null, default: 'pending']
+  submitted_comment text
+  review_comment text
+  reviewed_by_curator_user_id uuid [ref: > curator_profiles.user_id]
+  reviewed_at timestamptz
+  created_at timestamptz [not null]
+}
+
+Table verification_evidence {
+  id uuid [pk]
+  verification_request_id uuid [not null, ref: > verification_requests.id]
+  evidence_type varchar(80) [not null] // corporate_email, inn_doc, website_link, registry_extract
+  value text
+  evidence_file_id uuid [ref: > media_files.id]
+  created_at timestamptz [not null]
+}
+
+Table opportunities {
+  id uuid [pk]
+  company_id uuid [not null, ref: > companies.id]
+  created_by_user_id uuid [not null, ref: > users.id]
+  title varchar(255) [not null]
+  summary varchar(500) [not null]
+  slug varchar(200) [not null, unique]
+  description text [not null]
+  type opportunity_type [not null]
+  status opportunity_status [not null, default: 'draft']
+  moderation_status moderation_status [not null, default: 'pending']
+  participation_format participation_format [not null]
+  location_id uuid [ref: > locations.id]
+  contact_email varchar(255)
+  contact_phone varchar(32)
+  cover_media_id uuid [ref: > media_files.id]
+  published_at timestamptz
+  expires_at timestamptz
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table opportunity_vacancy_details {
+  opportunity_id uuid [pk, ref: > opportunities.id]
+  employment_type employment_type [not null]
+  experience_level experience_level [not null]
+  salary_from int
+  salary_to int
+  currency varchar(3)
+}
+
+Table opportunity_mentor_program_details {
+  opportunity_id uuid [pk, ref: > opportunities.id]
+  start_at timestamptz
+  end_at timestamptz
+  seats_count int
+  mentor_requirements text
+}
+
+Table opportunity_event_details {
+  opportunity_id uuid [pk, ref: > opportunities.id]
+  start_at timestamptz [not null]
+  end_at timestamptz [not null]
+  registration_deadline timestamptz
+  capacity int
+  venue_note varchar(255)
+}
+
+Table opportunity_links {
+  id uuid [pk]
+  opportunity_id uuid [not null, ref: > opportunities.id]
+  link_type link_type [not null]
+  title varchar(255) [not null]
+  url varchar(500) [not null]
+  sort_order int [not null, default: 0]
+
+  indexes {
+    (opportunity_id, sort_order)
+  }
+}
+
+Table opportunity_media {
+  id uuid [pk]
+  opportunity_id uuid [not null, ref: > opportunities.id]
+  media_file_id uuid [not null, ref: > media_files.id]
+  title varchar(255)
+  sort_order int [not null, default: 0]
+  created_at timestamptz [not null]
+}
+
+Table opportunity_stats {
+  opportunity_id uuid [pk, ref: > opportunities.id]
+  views_count int [not null, default: 0]
+  updated_at timestamptz [not null]
+}
+
+Table opportunity_tags {
+  opportunity_id uuid [not null, ref: > opportunities.id]
+  tag_id uuid [not null, ref: > tags.id]
+
+  indexes {
+    (opportunity_id, tag_id) [pk]
+  }
+}
+
+Table applications {
+  id uuid [pk]
+  opportunity_id uuid [not null, ref: > opportunities.id]
+  applicant_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  cover_letter text
+  status application_status [not null, default: 'submitted']
+  applied_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (opportunity_id, applicant_user_id) [unique]
+  }
+}
+
+Table application_status_history {
+  id uuid [pk]
+  application_id uuid [not null, ref: > applications.id]
+  old_status application_status
+  new_status application_status [not null]
+  changed_by_user_id uuid [not null, ref: > users.id]
+  comment text
+  created_at timestamptz [not null]
+
+  indexes {
+    application_id
+    (application_id, created_at)
+  }
+}
+
+Table applicant_saved_opportunities {
+  applicant_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  opportunity_id uuid [not null, ref: > opportunities.id]
+  created_at timestamptz [not null]
+
+  indexes {
+    (applicant_user_id, opportunity_id) [pk]
+  }
+}
+
+Table applicant_saved_companies {
+  applicant_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  company_id uuid [not null, ref: > companies.id]
+  created_at timestamptz [not null]
+
+  indexes {
+    (applicant_user_id, company_id) [pk]
+  }
+}
+
+Table connections {
+  id uuid [pk]
+  user_low_id uuid [not null, ref: > applicant_profiles.user_id]
+  user_high_id uuid [not null, ref: > applicant_profiles.user_id]
+  initiator_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  status connection_status [not null, default: 'pending']
+  initiator_note varchar(500)
+  responded_at timestamptz
+  created_at timestamptz [not null]
+
+  indexes {
+    (user_low_id, user_high_id) [unique]
+  }
+}
+
+Table opportunity_recommendations {
+  id uuid [pk]
+  recommender_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  recipient_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  opportunity_id uuid [not null, ref: > opportunities.id]
+  message varchar(1000)
+  created_at timestamptz [not null]
+}
+
+Table moderation_cases {
+  id uuid [pk]
+  target_type moderation_target_type [not null]
+  target_id uuid [not null]
+  submitted_by_user_id uuid [ref: > users.id]
+  assigned_curator_user_id uuid [ref: > curator_profiles.user_id]
+  resolved_by_curator_user_id uuid [ref: > curator_profiles.user_id]
+  status moderation_status [not null, default: 'pending']
+  reason text
+  created_at timestamptz [not null]
+  resolved_at timestamptz
+}
+
+Table notification_preferences {
+  user_id uuid [pk, ref: > users.id]
+  in_app_enabled boolean [not null, default: true]
+  email_enabled boolean [not null, default: true]
+
+  recommendation_enabled boolean [not null, default: true]
+  application_status_enabled boolean [not null, default: true]
+  employer_messages_enabled boolean [not null, default: true]
+  system_enabled boolean [not null, default: true]
+
+  updated_at timestamptz [not null]
+}
+
+Table notification_campaigns {
+  id uuid [pk]
+  company_id uuid [not null, ref: > companies.id]
+  created_by_user_id uuid [not null, ref: > users.id]
+  opportunity_id uuid [ref: > opportunities.id]
+
+  audience_type notification_campaign_audience_type [not null]
+  status notification_campaign_status [not null, default: 'draft']
+
+  title varchar(255) [not null]
+  body text [not null]
+
+  send_via_in_app boolean [not null, default: true]
+  send_via_email boolean [not null, default: false]
+
+  scheduled_at timestamptz
+  sent_at timestamptz
+  created_at timestamptz [not null]
+}
+
+Table notification_campaign_recipients {
+  campaign_id uuid [not null, ref: > notification_campaigns.id]
+  applicant_user_id uuid [not null, ref: > applicant_profiles.user_id]
+  application_id uuid [ref: > applications.id]
+  created_at timestamptz [not null]
+
+  indexes {
+    (campaign_id, applicant_user_id) [pk]
+  }
+}
+
+Table notifications {
+  id uuid [pk]
+  recipient_user_id uuid [not null, ref: > users.id]
+  actor_user_id uuid [ref: > users.id]
+
+  type notification_type [not null]
+  source_type notification_source_type [not null]
+  source_id uuid
+
+  company_id uuid [ref: > companies.id]
+  opportunity_id uuid [ref: > opportunities.id]
+  application_id uuid [ref: > applications.id]
+
+  title varchar(255) [not null]
+  body text
+
+  is_read boolean [not null, default: false]
+  read_at timestamptz
+  created_at timestamptz [not null]
+
+  indexes {
+    recipient_user_id
+    (recipient_user_id, is_read)
+    (source_type, source_id)
+  }
+}
+
+Table notification_deliveries {
+  id uuid [pk]
+  notification_id uuid [not null, ref: > notifications.id]
+  channel notification_channel [not null]
+  status notification_delivery_status [not null, default: 'queued']
+
+  sent_at timestamptz
+  delivered_at timestamptz
+  failed_at timestamptz
+  failure_reason text
+
+  indexes {
+    notification_id
+    (notification_id, channel) [unique]
+  }
+}
