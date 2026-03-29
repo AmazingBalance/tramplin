@@ -986,6 +986,9 @@ func (s *Server) externalObjectURL(raw string) string {
 	if err != nil {
 		return raw
 	}
+	if !shouldRewriteObjectURLHost(parsed.Host, s.cfg.ObjectStorageEndpoint) {
+		return raw
+	}
 
 	publicURL := s.cfg.ObjectStoragePublicURL
 	if strings.Contains(publicURL, "://") {
@@ -1005,6 +1008,26 @@ func (s *Server) externalObjectURL(raw string) string {
 		parsed.Scheme = "http"
 	}
 	return parsed.String()
+}
+
+func shouldRewriteObjectURLHost(rawHost, configuredEndpoint string) bool {
+	if rawHost == "" {
+		return false
+	}
+
+	endpointHost := configuredEndpoint
+	if endpointHost == "" {
+		return true
+	}
+	if strings.Contains(endpointHost, "://") {
+		parsed, err := url.Parse(endpointHost)
+		if err != nil || parsed.Host == "" {
+			return false
+		}
+		endpointHost = parsed.Host
+	}
+
+	return strings.EqualFold(rawHost, endpointHost)
 }
 
 func (s *Server) handleGetUISettings(w http.ResponseWriter, r *http.Request) {

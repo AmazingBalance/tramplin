@@ -19,6 +19,7 @@ func TestExternalObjectURL(t *testing.T) {
 
 	t.Run("rewrites to explicit public url", func(t *testing.T) {
 		server := &Server{cfg: config.Config{
+			ObjectStorageEndpoint:  "minio:9000",
 			ObjectStoragePublicURL: "http://127.0.0.1:9100",
 		}}
 
@@ -31,12 +32,26 @@ func TestExternalObjectURL(t *testing.T) {
 
 	t.Run("rewrites to host only public endpoint", func(t *testing.T) {
 		server := &Server{cfg: config.Config{
+			ObjectStorageEndpoint:  "minio:9000",
 			ObjectStoragePublicURL: "cdn.example.test:9443",
 			ObjectStoragePublicSSL: true,
 		}}
 
 		got := server.externalObjectURL("http://minio:9000/tramplin-media/object?x=1")
 		want := "https://cdn.example.test:9443/tramplin-media/object?x=1"
+		if got != want {
+			t.Fatalf("expected %q, got %q", want, got)
+		}
+	})
+
+	t.Run("does not rewrite urls from a different host", func(t *testing.T) {
+		server := &Server{cfg: config.Config{
+			ObjectStorageEndpoint:  "minio:9000",
+			ObjectStoragePublicURL: "http://127.0.0.1:9100",
+		}}
+
+		got := server.externalObjectURL("http://127.0.0.1:45461/upload/object?x=1")
+		want := "http://127.0.0.1:45461/upload/object?x=1"
 		if got != want {
 			t.Fatalf("expected %q, got %q", want, got)
 		}
