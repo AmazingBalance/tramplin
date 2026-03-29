@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"tramplin/backend/internal/config"
+	objectstoreplatform "tramplin/backend/internal/platform/objectstore"
 	httptransport "tramplin/backend/internal/transport/http"
 )
 
@@ -111,11 +112,153 @@ func TestOpportunityLifecycleIntegration(t *testing.T) {
 
 func TestPublicOpportunityQueryValidationIntegration(t *testing.T) {
 	env := newIntegrationEnv(t)
-	response := env.requestJSON(t, http.MethodGet, "/v1/public/opportunities?view=map&lat=55.75&lng=37.62&radiusKm=10", nil)
+	response := env.requestJSON(t, http.MethodGet, "/v1/public/opportunities?view=map&lat=55.75&lng=37.62", nil)
 
 	assertStatus(t, response, http.StatusUnprocessableEntity)
 	assertEqual(t, stringField(t, response.body, "code"), "validation_error")
-	assertEqual(t, stringField(t, response.body, "message"), "map geo filters are not implemented yet")
+	assertEqual(t, stringField(t, response.body, "message"), "radiusKm is required when lat and lng are provided")
+}
+
+func TestPublicOpportunityMapFiltersIntegration(t *testing.T) {
+	env := newIntegrationEnv(t)
+
+	employerClient := env.newSessionClient(t)
+
+	register := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/auth/register/employer", map[string]any{
+		"email":       fmt.Sprintf("opps-map-%d@example.com", time.Now().UnixNano()),
+		"password":    "password123",
+		"displayName": "Map Employer",
+		"fullName":    "Map Employer",
+	})
+	assertStatus(t, register, http.StatusCreated)
+
+	company := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/companies", map[string]any{
+		"legalName": "Map Company",
+		"slug":      fmt.Sprintf("map-company-%d", time.Now().UnixNano()),
+	})
+	assertStatus(t, company, http.StatusCreated)
+	companyID := stringField(t, company.body, "id")
+
+	omskOpportunity := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/opportunities", map[string]any{
+		"companyId":           companyID,
+		"title":               "Omsk Opportunity",
+		"summary":             "Visible near Omsk",
+		"slug":                fmt.Sprintf("omsk-opportunity-%d", time.Now().UnixNano()),
+		"description":         "Opportunity with Omsk coordinates",
+		"type":                "internship",
+		"participationFormat": "offline",
+		"location": map[string]any{
+			"precision":   "exact_address",
+			"country":     "Russia",
+			"city":        "Omsk",
+			"addressLine": "Lenina 1",
+			"latitude":    54.9885,
+			"longitude":   73.3242,
+		},
+		"vacancyDetails": map[string]any{
+			"employmentType":  "full_time",
+			"experienceLevel": "junior",
+		},
+	})
+	assertStatus(t, omskOpportunity, http.StatusCreated)
+	omskOpportunityID := stringField(t, omskOpportunity.body, "id")
+
+	moscowOpportunity := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/opportunities", map[string]any{
+		"companyId":           companyID,
+		"title":               "Moscow Opportunity",
+		"summary":             "Visible near Moscow",
+		"slug":                fmt.Sprintf("moscow-opportunity-%d", time.Now().UnixNano()),
+		"description":         "Opportunity with Moscow coordinates",
+		"type":                "internship",
+		"participationFormat": "offline",
+		"location": map[string]any{
+			"precision":   "exact_address",
+			"country":     "Russia",
+			"city":        "Moscow",
+			"addressLine": "Tverskaya 1",
+			"latitude":    55.7558,
+			"longitude":   37.6176,
+		},
+		"vacancyDetails": map[string]any{
+			"employmentType":  "full_time",
+			"experienceLevel": "junior",
+		},
+	})
+	assertStatus(t, moscowOpportunity, http.StatusCreated)
+	moscowOpportunityID := stringField(t, moscowOpportunity.body, "id")
+
+	for _, opportunityID := range []string{omskOpportunityID, moscowOpportunityID} {
+		planned := env.requestJSONWithClient(t, employerClient, http.MethodPatch, "/v1/employer/opportunities/"+opportunityID, map[string]any{
+			"status": "planned",
+		})
+		assertStatus(t, planned, http.StatusOK)
+		env.execSQL(t, `UPDATE opportunities SET moderation_status = 'approved' WHERE id = $1`, opportunityID)
+	}
+
+	bboxList := env.requestJSON(t, http.MethodGet, "/v1/public/opportunities?view=map&bbox=73.0,54.8,73.5,55.1", nil)
+	assertStatus(t, bboxList, http.StatusOK)
+	assertCount(t, bboxList.body, "items", 1)
+	assertEqual(t, nestedStringField(t, bboxList.body, "items", 0, "id"), omskOpportunityID)
+
+	radiusList := env.requestJSON(t, http.MethodGet, "/v1/public/opportunities?view=map&lat=54.9885&lng=73.3242&radiusKm=5", nil)
+	assertStatus(t, radiusList, http.StatusOK)
+	assertCount(t, radiusList.body, "items", 1)
+	assertEqual(t, nestedStringField(t, radiusList.body, "items", 0, "id"), omskOpportunityID)
+}
+
+func TestEmployerOpportunityLifecycleActionEndpointsIntegration(t *testing.T) {
+	env := newIntegrationEnv(t)
+
+	employerClient := env.newSessionClient(t)
+
+	registerEmployer := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/auth/register/employer", map[string]any{
+		"email":       fmt.Sprintf("opps-actions-%d@example.com", time.Now().UnixNano()),
+		"password":    "password123",
+		"displayName": "Lifecycle Employer",
+		"fullName":    "Lifecycle Employer",
+	})
+	assertStatus(t, registerEmployer, http.StatusCreated)
+
+	company := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/companies", map[string]any{
+		"legalName": "Lifecycle Company",
+		"slug":      fmt.Sprintf("lifecycle-company-%d", time.Now().UnixNano()),
+	})
+	assertStatus(t, company, http.StatusCreated)
+	companyID := stringField(t, company.body, "id")
+
+	createOpportunity := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/opportunities", map[string]any{
+		"companyId":           companyID,
+		"title":               "Lifecycle Opportunity",
+		"summary":             "Lifecycle test",
+		"slug":                fmt.Sprintf("lifecycle-opportunity-%d", time.Now().UnixNano()),
+		"description":         "Lifecycle action endpoint coverage",
+		"type":                "internship",
+		"participationFormat": "remote",
+		"vacancyDetails": map[string]any{
+			"employmentType":  "full_time",
+			"experienceLevel": "junior",
+		},
+	})
+	assertStatus(t, createOpportunity, http.StatusCreated)
+	opportunityID := stringField(t, createOpportunity.body, "id")
+
+	planned := env.requestJSONWithClient(t, employerClient, http.MethodPatch, "/v1/employer/opportunities/"+opportunityID, map[string]any{
+		"status": "planned",
+	})
+	assertStatus(t, planned, http.StatusOK)
+	env.execSQL(t, `UPDATE opportunities SET moderation_status = 'approved' WHERE id = $1`, opportunityID)
+
+	activated := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/opportunities/"+opportunityID+"/activate", nil)
+	assertStatus(t, activated, http.StatusOK)
+	assertEqual(t, stringField(t, activated.body, "status"), "active")
+
+	closed := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/opportunities/"+opportunityID+"/close", nil)
+	assertStatus(t, closed, http.StatusOK)
+	assertEqual(t, stringField(t, closed.body, "status"), "closed")
+
+	archived := env.requestJSONWithClient(t, employerClient, http.MethodPost, "/v1/employer/opportunities/"+opportunityID+"/archive", nil)
+	assertStatus(t, archived, http.StatusOK)
+	assertEqual(t, stringField(t, archived.body, "status"), "archived")
 }
 
 type integrationEnv struct {
@@ -160,10 +303,12 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 
 	applyMigrations(t, testDB, filepath.Join(backendRoot, "db", "migrations"))
 
-	server := httptest.NewServer(httptransport.NewServer(cfg, testDB))
+	objects := objectstoreplatform.NewFake()
+	server := httptest.NewServer(httptransport.NewServer(cfg, testDB, httptransport.WithObjectStore(objects)))
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		server.Close()
+		objects.Close()
 		testDB.Close()
 		admin.Exec(ctx, `DROP SCHEMA IF EXISTS `+quoteIdent(schema)+` CASCADE`)
 		admin.Close()
@@ -183,6 +328,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 
 	t.Cleanup(func() {
 		server.Close()
+		objects.Close()
 		testDB.Close()
 		admin.Exec(context.Background(), `DROP SCHEMA IF EXISTS `+quoteIdent(schema)+` CASCADE`)
 		admin.Close()
@@ -192,6 +338,27 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 }
 
 func (e *integrationEnv) requestJSON(t *testing.T, method, path string, payload any) jsonResponse {
+	t.Helper()
+	return e.requestJSONWithClient(t, e.client, method, path, payload)
+}
+
+func (e *integrationEnv) newSessionClient(t *testing.T) *http.Client {
+	t.Helper()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("create cookie jar: %v", err)
+	}
+	base := e.server.Client()
+	return &http.Client{
+		Transport:     base.Transport,
+		CheckRedirect: base.CheckRedirect,
+		Jar:           jar,
+		Timeout:       base.Timeout,
+	}
+}
+
+func (e *integrationEnv) requestJSONWithClient(t *testing.T, client *http.Client, method, path string, payload any) jsonResponse {
 	t.Helper()
 
 	var body io.Reader
@@ -211,7 +378,7 @@ func (e *integrationEnv) requestJSON(t *testing.T, method, path string, payload 
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := e.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do request %s %s: %v", method, path, err)
 	}
@@ -360,6 +527,20 @@ func stringField(t *testing.T, body map[string]any, field string) string {
 	value, ok := body[field].(string)
 	if !ok {
 		t.Fatalf("field %q is not a string: %v", field, body[field])
+	}
+	return value
+}
+
+func objectStringField(t *testing.T, body map[string]any, objectField, nestedField string) string {
+	t.Helper()
+
+	object, ok := body[objectField].(map[string]any)
+	if !ok {
+		t.Fatalf("field %q is not an object: %v", objectField, body[objectField])
+	}
+	value, ok := object[nestedField].(string)
+	if !ok {
+		t.Fatalf("nested field %q is not a string: %v", nestedField, object[nestedField])
 	}
 	return value
 }

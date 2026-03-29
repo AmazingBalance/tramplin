@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tramplin
+      POSTGRES_PASSWORD: tramplin
+      POSTGRES_DB: tramplin
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tramplin -d tramplin"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      network: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      TRAMPLIN_HTTP_ADDR: ":8080"
+      TRAMPLIN_TOKEN_SECRET: "dev-secret-change-me"
+      TRAMPLIN_DATABASE_URL: "postgres://tramplin:tramplin@postgres:5432/tramplin?sslmode=disable"
+      TRAMPLIN_OBJECT_STORAGE_ENDPOINT: "minio:9000"
+      TRAMPLIN_OBJECT_STORAGE_PUBLIC_URL: "http://127.0.0.1:9100"
+      TRAMPLIN_OBJECT_STORAGE_ACCESS_KEY: "minioadmin"
+      TRAMPLIN_OBJECT_STORAGE_SECRET_KEY: "minioadmin"
+      TRAMPLIN_OBJECT_STORAGE_BUCKET: "tramplin-media"
+      TRAMPLIN_OBJECT_STORAGE_USE_SSL: "false"
+      TRAMPLIN_OBJECT_STORAGE_REGION: "us-east-1"
+      TRAMPLIN_UPLOAD_URL_TTL: "15m"
+      TRAMPLIN_DOWNLOAD_URL_TTL: "15m"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  seed:
+    build:
+      context: .
+      network: host
+    profiles:
+      - tools
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      TRAMPLIN_DATABASE_URL: "postgres://tramplin:tramplin@postgres:5432/tramplin?sslmode=disable"
+      TRAMPLIN_OBJECT_STORAGE_ENDPOINT: "minio:9000"
+      TRAMPLIN_OBJECT_STORAGE_ACCESS_KEY: "minioadmin"
+      TRAMPLIN_OBJECT_STORAGE_SECRET_KEY: "minioadmin"
+      TRAMPLIN_OBJECT_STORAGE_BUCKET: "tramplin-media"
+      TRAMPLIN_OBJECT_STORAGE_USE_SSL: "false"
+      TRAMPLIN_OBJECT_STORAGE_REGION: "us-east-1"
+    command: ["seed"]
+
+volumes:
+  postgres-data:
+  minio-data:

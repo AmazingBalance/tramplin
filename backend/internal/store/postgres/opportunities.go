@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -725,6 +726,12 @@ func (s *Store) filterPublicOpportunities(items []*model.Opportunity, input mode
 		if input.City != "" && !s.opportunityMatchesCity(item, input.City) {
 			continue
 		}
+		if input.BBox != nil && !s.opportunityMatchesBounds(item, input.BBox) {
+			continue
+		}
+		if input.Lat != nil && input.Lng != nil && input.RadiusKm != nil && !s.opportunityMatchesRadius(item, *input.Lat, *input.Lng, *input.RadiusKm) {
+			continue
+		}
 		if len(input.TagIDs) > 0 && !opportunityMatchesTags(item, input.TagIDs) {
 			continue
 		}
@@ -803,14 +810,37 @@ func opportunityMatchesTags(opportunity *model.Opportunity, tagIDs []string) boo
 }
 
 func (s *Store) opportunityMatchesCity(opportunity *model.Opportunity, city string) bool {
-	if opportunity.LocationID == nil {
-		return false
-	}
-	location := s.GetLocationByID(opportunity.LocationID)
+	location := s.opportunityLocation(opportunity)
 	if location == nil {
 		return false
 	}
 	return containsFold(location.City, city)
+}
+
+func (s *Store) opportunityMatchesBounds(opportunity *model.Opportunity, bounds *model.GeoBounds) bool {
+	location := s.opportunityLocation(opportunity)
+	if location == nil || location.Latitude == nil || location.Longitude == nil {
+		return false
+	}
+	return *location.Longitude >= bounds.MinLng &&
+		*location.Longitude <= bounds.MaxLng &&
+		*location.Latitude >= bounds.MinLat &&
+		*location.Latitude <= bounds.MaxLat
+}
+
+func (s *Store) opportunityMatchesRadius(opportunity *model.Opportunity, lat, lng, radiusKm float64) bool {
+	location := s.opportunityLocation(opportunity)
+	if location == nil || location.Latitude == nil || location.Longitude == nil {
+		return false
+	}
+	return haversineDistanceKm(lat, lng, *location.Latitude, *location.Longitude) <= radiusKm
+}
+
+func (s *Store) opportunityLocation(opportunity *model.Opportunity) *model.Location {
+	if opportunity.LocationID == nil {
+		return nil
+	}
+	return s.GetLocationByID(opportunity.LocationID)
 }
 
 func opportunityStartAt(opportunity *model.Opportunity) *time.Time {
@@ -906,6 +936,23 @@ func opportunitySalaryValue(opportunity *model.Opportunity) (int, bool) {
 
 func containsFold(value, needle string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(needle))
+}
+
+func haversineDistanceKm(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthRadiusKm = 6371.0
+
+	lat1Rad := lat1 * math.Pi / 180
+	lng1Rad := lng1 * math.Pi / 180
+	lat2Rad := lat2 * math.Pi / 180
+	lng2Rad := lng2 * math.Pi / 180
+
+	dLat := lat2Rad - lat1Rad
+	dLng := lng2Rad - lng1Rad
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*math.Sin(dLng/2)*math.Sin(dLng/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadiusKm * c
 }
 
 func detailsBlockCount(vacancy *model.OpportunityVacancyDetails, mentor *model.OpportunityMentorProgramDetails, event *model.OpportunityEventDetails) int {

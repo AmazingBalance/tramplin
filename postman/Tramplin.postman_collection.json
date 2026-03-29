@@ -1,0 +1,4133 @@
+{
+  "info": {
+    "_postman_id": "9812f843-25d1-44d6-9696-918945638f3c",
+    "name": "Tramplin API",
+    "description": "API for the \"Трамплин\" career platform\n\nRefined MVP contract between backend and frontend for the \"Трамплин\" platform.\n\nThis revision aligns the API with `Tramplin.dbml` and the original technical specification.\nIt keeps the role model, moderation flow, notifications, and location-aware public catalog,\nwhile correcting enum values and DTO shapes that had drifted from the data model.\n\nKey alignment points:\n  - database-backed enum values are used consistently;\n  - public company responses exclude verification-only fields;\n  - saved entities and employer application flows expose stored metadata;\n  - media metadata matches the `media_files` table, while access is derived from the entity a file is attached to.\n\nAuthentication is implemented with stateless JWT tokens transported in HttpOnly cookies.\nProtected browser requests must be sent with credentials included.\n\nCurator administration invariant:\n  - exactly one platform administrator exists at any time;\n  - the administrator is also a curator and has all ordinary curator permissions;\n  - only that administrator can create and manage other curator accounts;\n  - creating a second administrator through public API is not supported.\n\nGenerated from TramplinAPI.yaml.\n\nAuth is cookie-based. Login once in Postman and reuse the same environment/session so cookies persist.\n\nFor local manual testing, import the bundled `Tramplin Local` environment and run `make infra-start`, `make db-migrate`, `make seed-dev`, then `make run`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "5.4.0-draft"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register applicant account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new.applicant.{{$timestamp}}@example.com\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"New Applicant\",\n  \"firstName\": \"New\",\n  \"lastName\": \"Applicant\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register/applicant",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "register",
+                "applicant"
+              ],
+              "query": []
+            },
+            "description": "Register applicant account\n\noperationId: `registerApplicant`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Register employer account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new.employer.{{$timestamp}}@example.com\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"New Employer\",\n  \"fullName\": \"New Employer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register/employer",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "register",
+                "employer"
+              ],
+              "query": []
+            },
+            "description": "Register employer account\n\noperationId: `registerEmployer`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Login by email and password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{employerOwnerEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ],
+              "query": []
+            },
+            "description": "Login by email and password\n\noperationId: `login`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh auth cookies using refresh token cookie",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "refresh"
+              ],
+              "query": []
+            },
+            "description": "Refresh auth cookies using refresh token cookie\n\noperationId: `refreshToken`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout current browser session by clearing auth cookies",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "logout"
+              ],
+              "query": []
+            },
+            "description": "Clears auth cookies only for the current browser session. This operation does not change users.token_version and does not invalidate other active sessions.\n\noperationId: `logout`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Invalidate all active tokens for current user",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout-all",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "logout-all"
+              ],
+              "query": []
+            },
+            "description": "Backend increments users.token_version and clears current auth cookies. This invalidates all existing access and refresh tokens for the user across browsers and devices.\n\noperationId: `logoutAll`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get authenticated user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ],
+              "query": []
+            },
+            "description": "Get authenticated user\n\noperationId: `getMe`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get UI settings for current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/ui-settings",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "ui-settings"
+              ],
+              "query": []
+            },
+            "description": "Available to any authenticated user role.\n\noperationId: `getMyUiSettings`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Replace UI settings for current user",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settingsJson\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/ui-settings",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "ui-settings"
+              ],
+              "query": []
+            },
+            "description": "Available to any authenticated user role.\n\noperationId: `putMyUiSettings`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Search and filter publicly visible opportunities for list or map",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/opportunities",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "opportunities"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "string",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "internship",
+                  "disabled": true
+                },
+                {
+                  "key": "participationFormat",
+                  "value": "offline",
+                  "disabled": true
+                },
+                {
+                  "key": "employmentType",
+                  "value": "full_time",
+                  "disabled": true
+                },
+                {
+                  "key": "experienceLevel",
+                  "value": "trainee",
+                  "disabled": true
+                },
+                {
+                  "key": "companyId",
+                  "value": "11111111-1111-1111-1111-111111111111",
+                  "disabled": true
+                },
+                {
+                  "key": "city",
+                  "value": "string",
+                  "disabled": true
+                },
+                {
+                  "key": "tagIds",
+                  "value": "11111111-1111-1111-1111-111111111111",
+                  "disabled": true,
+                  "description": "Repeated query parameter, for example ?tagIds=id1&tagIds=id2"
+                },
+                {
+                  "key": "salaryFrom",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "salaryTo",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "startsAfter",
+                  "value": "2026-01-01T10:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "expiresAfter",
+                  "value": "2026-01-01T10:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "published_at_desc",
+                  "disabled": true
+                },
+                {
+                  "key": "view",
+                  "value": "list",
+                  "disabled": true
+                },
+                {
+                  "key": "bbox",
+                  "value": "string",
+                  "disabled": true,
+                  "description": "Bounding box for map mode: minLng,minLat,maxLng,maxLat"
+                },
+                {
+                  "key": "lat",
+                  "value": "1.5",
+                  "disabled": true
+                },
+                {
+                  "key": "lng",
+                  "value": "1.5",
+                  "disabled": true
+                },
+                {
+                  "key": "radiusKm",
+                  "value": "0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns only opportunities that are visible in the public catalog.\n\nIn practice this means moderation_status=approved, publication rules are satisfied,\nand status in [planned, active]. Publication rules additionally require either\npublishedAt is null or publishedAt <= current server time.\n\nQuery rules:\n  - view=list is the default.\n  - bbox, lat, lng, and radiusKm are allowed only when view=map.\n  - city may be used in list or map mode, but in map mode it cannot be combined with bbox or center+radius filtering.\n  - bbox cannot be combined with lat, lng, or radiusKm.\n  - lat and lng must be provided together; if either is present then radiusKm is required.\n  - employmentType, experienceLevel, salaryFrom, and salaryTo filter only vacancy and internship opportunities.\n  - startsAfter filters only event and mentor_program opportunities that have a non-null startAt.\n  - expiresAfter matches only opportunities whose expiresAt is non-null and greater than or equal to the provided timestamp.\n\nSorting rules:\n  - published_at_* sorts by publishedAt and falls back to createdAt desc for stable pagination.\n  - salary_* places opportunities with salary data first and opportunities without salary data after them, then falls back to publishedAt desc.\n  - starts_at_asc places entities with a meaningful startAt (events and mentor programs) first; entities without startAt are placed after them and secondarily sorted by publishedAt desc.\n\nInvalid parameter combinations must be rejected with 422 rather than silently ignored.\n\noperationId: `listPublicOpportunities`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Get public opportunity detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/opportunities/{{opportunityId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "opportunities",
+                "{{opportunityId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns the public detail view only if the opportunity currently satisfies the same public-catalog visibility rules as /public/opportunities. Otherwise the endpoint returns 404.\n\noperationId: `getPublicOpportunity`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Search public companies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/companies",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "companies"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "string",
+                  "disabled": true
+                },
+                {
+                  "key": "industry",
+                  "value": "string",
+                  "disabled": true
+                },
+                {
+                  "key": "city",
+                  "value": "string",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns company profiles visible in the public catalog. In MVP, company profiles are public once created; verificationStatus is informational and does not itself hide a company from public listing. The optional q and city filters are free-text filters, and type is not exposed because companies are not categorized by role beyond their profile content.\n\noperationId: `listPublicCompanies`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Get public company detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/companies/{{companyId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "companies",
+                "{{companyId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns the public company profile. In MVP, company detail is publicly available once the company record exists.\n\noperationId: `getPublicCompany`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Get active tags for filters and forms",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/tags",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "tags"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "technology",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "string",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns only tags where isActive=true. type is an exact tag-type filter. q is free-text search by tag name; matching strategy is implementation-defined but should be case-insensitive in normal user-facing implementations.\n\noperationId: `listPublicTags`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Get public opportunity detail by slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/opportunities/by-slug/{{opportunitySlug}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "opportunities",
+                "by-slug",
+                "{{opportunitySlug}}"
+              ],
+              "query": []
+            },
+            "description": "Returns the public detail view only if the opportunity currently satisfies the same public-catalog visibility rules as /public/opportunities. Otherwise the endpoint returns 404.\n\noperationId: `getPublicOpportunityBySlug`\n\nAuth: none."
+          },
+          "response": []
+        },
+        {
+          "name": "Get public company detail by slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/companies/by-slug/{{companySlug}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "public",
+                "companies",
+                "by-slug",
+                "{{companySlug}}"
+              ],
+              "query": []
+            },
+            "description": "Returns the public company profile. In MVP, company detail is publicly available once the company record exists.\n\noperationId: `getPublicCompanyBySlug`\n\nAuth: none."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Applicant",
+      "item": [
+        {
+          "name": "Get current applicant profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant-profile",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant-profile"
+              ],
+              "query": []
+            },
+            "description": "Get current applicant profile\n\noperationId: `getMyApplicantProfile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update current applicant profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant-profile",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant-profile"
+              ],
+              "query": []
+            },
+            "description": "Update current applicant profile\n\noperationId: `patchMyApplicantProfile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get applicant privacy settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/privacy",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Get applicant privacy settings\n\noperationId: `getMyApplicantPrivacy`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update applicant privacy settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profileVisibility\": \"private\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/privacy",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Update applicant privacy settings\n\noperationId: `patchMyApplicantPrivacy`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List social links of current applicant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/social-links",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "social-links"
+              ],
+              "query": []
+            },
+            "description": "List social links of current applicant\n\noperationId: `listMyApplicantSocialLinks`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Add social link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"string\",\n  \"url\": \"https://example.com/resource\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/social-links",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "social-links"
+              ],
+              "query": []
+            },
+            "description": "Add social link\n\noperationId: `createMyApplicantSocialLink`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update social link",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/social-links/{{applicantSocialLinkId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "social-links",
+                "{{applicantSocialLinkId}}"
+              ],
+              "query": []
+            },
+            "description": "Update social link\n\noperationId: `patchMyApplicantSocialLink`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete social link",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/social-links/{{applicantSocialLinkId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "social-links",
+                "{{applicantSocialLinkId}}"
+              ],
+              "query": []
+            },
+            "description": "Delete social link\n\noperationId: `deleteMyApplicantSocialLink`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List current applicant tags",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/tags",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "tags"
+              ],
+              "query": []
+            },
+            "description": "Returns tags self-assigned by the current applicant.\n\noperationId: `listMyApplicantTags`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Replace applicant tag set",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tagIds\": [\n    \"11111111-1111-1111-1111-111111111111\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/applicant/tags",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applicant",
+                "tags"
+              ],
+              "query": []
+            },
+            "description": "Replaces the set of tags self-assigned by the current applicant.\n\noperationId: `replaceMyApplicantTags`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List applications of current applicant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applications",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applications"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "submitted",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List applications of current applicant\n\noperationId: `listMyApplications`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Apply to opportunity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opportunityId\": \"{{opportunityId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/applications",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applications"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - only applicant users can apply;\n  - only one application may ever exist per applicant/opportunity pair;\n  - target opportunity must be publicly available for applying;\n  - applicant cannot apply to closed, rejected, archived, or expired opportunity;\n  - application is created with status=submitted.\n\noperationId: `createApplication`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get application detail with history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applications/{{applicationId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applications",
+                "{{applicationId}}"
+              ],
+              "query": []
+            },
+            "description": "Get application detail with history\n\noperationId: `getMyApplication`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw own application",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/applications/{{applicationId}}/withdraw",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "applications",
+                "{{applicationId}}",
+                "withdraw"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - only the owning applicant can withdraw the application;\n  - allowed from statuses: submitted, reviewing, reserve;\n  - not allowed from accepted, rejected, withdrawn.\n\noperationId: `withdrawMyApplication`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List saved opportunities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/saved-opportunities",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "saved-opportunities"
+              ],
+              "query": []
+            },
+            "description": "List saved opportunities\n\noperationId: `listSavedOpportunities`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Save opportunity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opportunityId\": \"{{opportunityId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/saved-opportunities",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "saved-opportunities"
+              ],
+              "query": []
+            },
+            "description": "Save opportunity\n\noperationId: `saveOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove opportunity from saved",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/saved-opportunities/{{opportunityId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "saved-opportunities",
+                "{{opportunityId}}"
+              ],
+              "query": []
+            },
+            "description": "Remove opportunity from saved\n\noperationId: `deleteSavedOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List saved companies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/saved-companies",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "saved-companies"
+              ],
+              "query": []
+            },
+            "description": "List saved companies\n\noperationId: `listSavedCompanies`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Save company",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyId\": \"{{companyId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/saved-companies",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "saved-companies"
+              ],
+              "query": []
+            },
+            "description": "Save company\n\noperationId: `saveCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove company from saved",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/saved-companies/{{companyId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "saved-companies",
+                "{{companyId}}"
+              ],
+              "query": []
+            },
+            "description": "Remove company from saved\n\noperationId: `deleteSavedCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List applicant connections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/connections",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "connections"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List applicant connections\n\noperationId: `listMyConnections`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Send connection request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetApplicantUserId\": \"{{secondApplicantUserId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/connections",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "connections"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - only applicant users can create connections;\n  - self-connection is forbidden;\n  - there can be only one connection record for an unordered pair of applicants.\n\noperationId: `createConnection`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Respond to connection request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"accepted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/connections/{{connectionId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "connections",
+                "{{connectionId}}"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - only participants of the connection can update it;\n  - accepted/rejected/blocked are terminal outcomes for the pending request;\n  - blocked may later be handled by a dedicated unblock flow if introduced.\n\noperationId: `patchConnection`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Recommend opportunity to another applicant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientUserId\": \"{{secondApplicantUserId}}\",\n  \"opportunityId\": \"{{opportunityId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/me/recommendations",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "recommendations"
+              ],
+              "query": []
+            },
+            "description": "Recommend opportunity to another applicant\n\noperationId: `createOpportunityRecommendation`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get applicant profile visible to current authenticated user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/applicants/{{applicantUserId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "applicants",
+                "{{applicantUserId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns applicant profile filtered by applicant privacy settings.\nVisibility rules:\n  - private -> owner and curators only;\n  - contacts_only -> accepted contacts, owner, and curators;\n  - employers_only -> employer users, owner, and curators;\n  - authenticated_public -> any authenticated user and curators.\nCurators may always read the profile for moderation purposes.\nThe returned payload does not expose the applicant's raw privacy settings.\n\noperationId: `getApplicantProfileById`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List received opportunity recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/recommendations/received",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "recommendations",
+                "received"
+              ],
+              "query": []
+            },
+            "description": "List received opportunity recommendations\n\noperationId: `listReceivedRecommendations`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List sent opportunity recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me/recommendations/sent",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "me",
+                "recommendations",
+                "sent"
+              ],
+              "query": []
+            },
+            "description": "List sent opportunity recommendations\n\noperationId: `listSentRecommendations`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Employer",
+      "item": [
+        {
+          "name": "Get current employer profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/profile",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "profile"
+              ],
+              "query": []
+            },
+            "description": "Get current employer profile\n\noperationId: `getMyEmployerProfile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update current employer profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/profile",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "profile"
+              ],
+              "query": []
+            },
+            "description": "Update current employer profile\n\noperationId: `patchMyEmployerProfile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List company memberships of current employer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies"
+              ],
+              "query": []
+            },
+            "description": "Returns the current employer's company memberships. membershipStatus is derived from workflow state; only approved memberships grant company management access. Recommended MVP workflow: any approved member may create or reopen a pending invitation for another employer, while only owners may assign owner role or primary-contact status. Managers may approve, reject, revoke, or change only non-owner memberships.\n\noperationId: `listEmployerCompanies`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create company profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies"
+              ],
+              "query": []
+            },
+            "description": "Creates a company profile and an initial approved owner membership for the current employer. That initial membership is also the primary contact by default.\n\noperationId: `createEmployerCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get employer company detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns company management detail for a company where the current employer has approved membership access.\n\noperationId: `getEmployerCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update employer company",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}"
+              ],
+              "query": []
+            },
+            "description": "Updates company content for a company where the current employer has approved membership access.\n\noperationId: `patchEmployerCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List company memberships",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/memberships",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "memberships"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns the membership roster of a company where the current employer has approved membership access. Any approved member may view the current membership and invitation state.\n\noperationId: `listCompanyMemberships`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Invite employer to company",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employerEmail\": \"{{employerRecruiterEmail}}\",\n  \"memberRole\": \"owner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/memberships",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "memberships"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - current employer must have approved membership in the target company;\n  - target employer is resolved by employerEmail and must already have an employer account;\n  - any approved member may create a new pending membership or reopen a rejected/revoked membership;\n  - pending or approved membership for the same employer/company pair cannot be duplicated;\n  - only owners may invite directly into memberRole=owner or request isPrimaryContact=true;\n  - managers may invite only recruiter/hr/manager memberships.\n\noperationId: `createCompanyMembership`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update company membership role or primary contact",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/memberships/{{membershipId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "memberships",
+                "{{membershipId}}"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - current employer must have approved membership in the target company;\n  - target membership must belong to the specified company;\n  - only approved memberships may be edited through this endpoint;\n  - only owners may assign or remove memberRole=owner;\n  - managers may change only non-owner memberships and may assign only recruiter/hr/manager roles;\n  - only owners may set isPrimaryContact=true; setting it reassigns primary contact to the target membership.\n\noperationId: `patchCompanyMembership`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve company membership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/memberships/{{membershipId}}/approve",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "memberships",
+                "{{membershipId}}",
+                "approve"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - current employer must have approved membership in the target company;\n  - target membership must belong to the specified company and be pending;\n  - owners may approve any pending membership;\n  - managers may approve only non-owner memberships.\n\noperationId: `approveCompanyMembership`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject company membership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/memberships/{{membershipId}}/reject",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "memberships",
+                "{{membershipId}}",
+                "reject"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - current employer must have approved membership in the target company;\n  - target membership must belong to the specified company and be pending;\n  - owners may reject any pending membership;\n  - managers may reject only non-owner memberships;\n  - comment is required for auditability.\n\noperationId: `rejectCompanyMembership`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke company membership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/memberships/{{membershipId}}/revoke",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "memberships",
+                "{{membershipId}}",
+                "revoke"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - current employer must have approved membership in the target company;\n  - target membership must belong to the specified company and be approved;\n  - owners may revoke any approved membership, except the last approved owner membership;\n  - managers may revoke only non-owner memberships;\n  - comment is required for auditability.\n\noperationId: `revokeCompanyMembership`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List verification requests of company",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/verification-requests",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "verification-requests"
+              ],
+              "query": []
+            },
+            "description": "Returns verification requests for the company together with the company's current verification status snapshot.\n\noperationId: `listCompanyVerificationRequests`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Submit verification request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/verification-requests",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "verification-requests"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - only approved company members can submit verification requests;\n  - a company may have at most one active request in pending/under_review state;\n  - evidence requirements depend on verification method.\n\noperationId: `createCompanyVerificationRequest`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List own opportunities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "companyId",
+                  "value": "11111111-1111-1111-1111-111111111111",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "draft",
+                  "disabled": true
+                },
+                {
+                  "key": "moderationStatus",
+                  "value": "pending",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List own opportunities\n\noperationId: `listEmployerOpportunities`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create opportunity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities"
+              ],
+              "query": []
+            },
+            "description": "Business constraints:\n  - current employer must have approved membership in the target company;\n  - newly created opportunity starts in status=draft;\n  - moderation_status is initialized according to moderation workflow, usually pending;\n  - detail block must match `type`:\n      vacancy/internship -> vacancyDetails required;\n      mentor_program -> mentorProgramDetails required;\n      event -> eventDetails required.\n\noperationId: `createOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get employer opportunity detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities/{{opportunityId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities",
+                "{{opportunityId}}"
+              ],
+              "query": []
+            },
+            "description": "Get employer opportunity detail\n\noperationId: `getEmployerOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update opportunity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities/{{opportunityId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities",
+                "{{opportunityId}}"
+              ],
+              "query": []
+            },
+            "description": "Updates editable content of an employer opportunity.\nBusiness constraints for status transitions:\n  - draft -> planned, archived;\n  - planned -> active, archived;\n  - active -> closed, archived;\n  - closed -> archived;\n  - rejected -> draft, archived;\n  - archived is terminal.\n\nAdditional constraints:\n  - rejected is normally set by moderation workflow, not ordinary employer editing;\n  - active/planned opportunities intended for public catalog must have moderation_status=approved;\n  - changing type after creation is not supported in MVP;\n  - once moderation_status=approved, content fields are immutable in MVP;\n    only lifecycle actions such as activate/close/archive remain available.\n\noperationId: `patchEmployerOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List applications for opportunity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities/{{opportunityId}}/applications",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities",
+                "{{opportunityId}}",
+                "applications"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "submitted",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List applications for opportunity\n\noperationId: `listOpportunityApplications`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update application status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"reviewing\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/applications/{{applicationId}}/status",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "applications",
+                "{{applicationId}}",
+                "status"
+              ],
+              "query": []
+            },
+            "description": "Allowed status transitions:\n  - submitted -> reviewing, reserve, rejected;\n  - reviewing -> reserve, accepted, rejected;\n  - reserve -> reviewing, accepted, rejected;\n  - accepted, rejected, withdrawn are terminal.\n\nAdditional constraints:\n  - withdrawn can only be set by applicant withdrawal endpoint;\n  - status changes append a record to application_status_history;\n  - comment is optional but recommended for rejected/reserve decisions.\n\noperationId: `patchApplicationStatus`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List notification campaigns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/notification-campaigns",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "notification-campaigns"
+              ],
+              "query": [
+                {
+                  "key": "companyId",
+                  "value": "11111111-1111-1111-1111-111111111111",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "draft",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List notification campaigns\n\noperationId: `listNotificationCampaigns`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create notification campaign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audienceType\": \"single_applicant\",\n  \"applicantUserIds\": [\n    \"{{secondApplicantUserId}}\"\n  ],\n  \"companyId\": \"{{companyId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/notification-campaigns",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "notification-campaigns"
+              ],
+              "query": []
+            },
+            "description": "Audience constraints:\n  - single_applicant -> exactly one applicantUserId;\n  - selected_applicants -> one or more applicantUserIds;\n  - all_applicants_of_opportunity -> opportunityId required, applicantUserIds omitted.\n\noperationId: `createNotificationCampaign`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get notification campaign detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/notification-campaigns/{{campaignId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "notification-campaigns",
+                "{{campaignId}}"
+              ],
+              "query": []
+            },
+            "description": "Get notification campaign detail\n\noperationId: `getNotificationCampaign`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update notification campaign draft or scheduled campaign",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audienceType\": \"single_applicant\",\n  \"applicantUserIds\": [\n    \"11111111-1111-1111-1111-111111111111\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/notification-campaigns/{{campaignId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "notification-campaigns",
+                "{{campaignId}}"
+              ],
+              "query": []
+            },
+            "description": "Allows editing notification campaign content while status is draft or scheduled.\nSent and processing campaigns are immutable.\nIf audience-defining fields are provided, they replace the full audience definition and must satisfy the same audience constraints as campaign creation.\n\noperationId: `patchNotificationCampaign`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get applicant profile for employer review",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/applicants/{{applicantUserId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "applicants",
+                "{{applicantUserId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns applicant profile as visible to the current employer.\nThe backend may additionally allow access when the applicant has applied to at least one opportunity\nbelonging to the employer's companies. Curators are not served by this route.\nThe returned payload does not expose the applicant's raw privacy settings.\n\noperationId: `getEmployerApplicantProfile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List company social links",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/social-links",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "social-links"
+              ],
+              "query": []
+            },
+            "description": "List company social links\n\noperationId: `listEmployerCompanySocialLinks`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create company social link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"string\",\n  \"url\": \"https://example.com/resource\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/social-links",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "social-links"
+              ],
+              "query": []
+            },
+            "description": "Create company social link\n\noperationId: `createEmployerCompanySocialLink`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update company social link",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/social-links/{{companySocialLinkId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "social-links",
+                "{{companySocialLinkId}}"
+              ],
+              "query": []
+            },
+            "description": "Update company social link\n\noperationId: `patchEmployerCompanySocialLink`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete company social link",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/social-links/{{companySocialLinkId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "social-links",
+                "{{companySocialLinkId}}"
+              ],
+              "query": []
+            },
+            "description": "Delete company social link\n\noperationId: `deleteEmployerCompanySocialLink`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List company media",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/media",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "media"
+              ],
+              "query": []
+            },
+            "description": "List company media\n\noperationId: `listEmployerCompanyMedia`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create company media entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mediaFileId\": \"11111111-1111-1111-1111-111111111111\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/media",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "media"
+              ],
+              "query": []
+            },
+            "description": "Create company media entry\n\noperationId: `createEmployerCompanyMedia`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update company media entry",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/media/{{mediaId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "media",
+                "{{mediaId}}"
+              ],
+              "query": []
+            },
+            "description": "Update company media entry\n\noperationId: `patchEmployerCompanyMedia`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete company media entry",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/companies/{{companyId}}/media/{{mediaId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "companies",
+                "{{companyId}}",
+                "media",
+                "{{mediaId}}"
+              ],
+              "query": []
+            },
+            "description": "Delete company media entry\n\noperationId: `deleteEmployerCompanyMedia`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Activate approved opportunity",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities/{{opportunityId}}/activate",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities",
+                "{{opportunityId}}",
+                "activate"
+              ],
+              "query": []
+            },
+            "description": "Activates an opportunity through an explicit lifecycle action.\nContent fields of approved opportunities are immutable in MVP; only lifecycle actions are allowed.\nTypical allowed transition: planned -> active.\n\noperationId: `activateEmployerOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Close opportunity",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities/{{opportunityId}}/close",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities",
+                "{{opportunityId}}",
+                "close"
+              ],
+              "query": []
+            },
+            "description": "Closes an opportunity through an explicit lifecycle action.\nApproved opportunities cannot be content-edited, but they may still be closed.\n\noperationId: `closeEmployerOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Archive opportunity",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/opportunities/{{opportunityId}}/archive",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "opportunities",
+                "{{opportunityId}}",
+                "archive"
+              ],
+              "query": []
+            },
+            "description": "Archive opportunity\n\noperationId: `archiveEmployerOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Send notification campaign immediately",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/notification-campaigns/{{campaignId}}/send",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "notification-campaigns",
+                "{{campaignId}}",
+                "send"
+              ],
+              "query": []
+            },
+            "description": "Send notification campaign immediately\n\noperationId: `sendNotificationCampaign`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel notification campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employer/notification-campaigns/{{campaignId}}/cancel",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "notification-campaigns",
+                "{{campaignId}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "Cancel notification campaign\n\noperationId: `cancelNotificationCampaign`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create custom tag as employer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"tagType\": \"technology\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employer/tags",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "employer",
+                "tags"
+              ],
+              "query": []
+            },
+            "description": "Creates a custom active tag available for later use in employer forms. Backend may restrict allowed tag types for employers.\n\noperationId: `createEmployerTag`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Curator",
+      "item": [
+        {
+          "name": "List verification requests for review",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/verification-requests",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "verification-requests"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List verification requests for review\n\noperationId: `listCuratorVerificationRequests`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Review verification request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/verification-requests/{{verificationRequestId}}/review",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "verification-requests",
+                "{{verificationRequestId}}",
+                "review"
+              ],
+              "query": []
+            },
+            "description": "Review result semantics:\n  - approved -> company becomes verified;\n  - rejected -> request closed as rejected;\n  - needs_changes -> request returned to employer;\n  - under_review -> request stays open and assigned.\n\nA non-empty reviewComment is required for rejected and needs_changes reviews, and optional for approved or under_review.\n\noperationId: `reviewVerificationRequest`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List moderation cases",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/moderation-cases",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "moderation-cases"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                },
+                {
+                  "key": "targetType",
+                  "value": "company",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List moderation cases\n\noperationId: `listModerationCases`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create moderation case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetType\": \"company\",\n  \"targetId\": \"11111111-1111-1111-1111-111111111111\",\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/moderation-cases",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "moderation-cases"
+              ],
+              "query": []
+            },
+            "description": "Creates a moderation case for the specified target. The request must include a non-empty reason for auditability.\n\noperationId: `createModerationCase`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update moderation case",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/moderation-cases/{{moderationCaseId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "moderation-cases",
+                "{{moderationCaseId}}"
+              ],
+              "query": []
+            },
+            "description": "Moderation state semantics:\n  - pending -> newly created or not yet acted upon;\n  - approved -> target content accepted;\n  - rejected -> target content rejected;\n  - needs_changes -> target should be fixed and resubmitted.\n\nEvery moderation case update must include a non-empty reason for auditability.\n\noperationId: `patchModerationCase`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List tags for moderation and management",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/tags",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "tags"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "technology",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List tags for moderation and management\n\noperationId: `listCuratorTags`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create tag as curator",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"tagType\": \"technology\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/tags",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "tags"
+              ],
+              "query": []
+            },
+            "description": "Create tag as curator\n\noperationId: `createCuratorTag`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update tag activity or text",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/tags/{{tagId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "tags",
+                "{{tagId}}"
+              ],
+              "query": []
+            },
+            "description": "Update tag activity or text\n\noperationId: `patchCuratorTag`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "List non-curator users for moderation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/users",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "applicant",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "string",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Lists applicant and employer accounts for moderation. Curator accounts are excluded from this endpoint and are managed only through the admin-only curator account API.\n\noperationId: `listCuratorUsers`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get non-curator user moderation detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/users/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "users",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns moderation detail for a non-curator user account. Curator accounts are managed only through the admin-only curator account API.\n\noperationId: `getCuratorUser`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update non-curator user active state or display fields",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/users/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "users",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Updates a non-curator user account for moderation purposes. Curator accounts are excluded from this endpoint and must be managed only through the admin-only curator account API. The request must include a non-empty audit reason.\n\noperationId: `patchCuratorUser`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get applicant detail for moderation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/applicants/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "applicants",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns the applicant profile for moderation, including the applicant's raw privacy settings in addition to the filtered profile view.\n\noperationId: `getCuratorApplicant`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update applicant profile or privacy for moderation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/applicants/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "applicants",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Updates applicant content or privacy settings for moderation purposes. The request must include a non-empty audit reason.\n\noperationId: `patchCuratorApplicant`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get employer detail for moderation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/employers/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "employers",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Get employer detail for moderation\n\noperationId: `getCuratorEmployer`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update employer profile for moderation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/employers/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "employers",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Updates employer profile data for moderation purposes. The request must include a non-empty audit reason.\n\noperationId: `patchCuratorEmployer`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get company detail for moderation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/companies/{{companyId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "companies",
+                "{{companyId}}"
+              ],
+              "query": []
+            },
+            "description": "Get company detail for moderation\n\noperationId: `getCuratorCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Correct company content for moderation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/companies/{{companyId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "companies",
+                "{{companyId}}"
+              ],
+              "query": []
+            },
+            "description": "Allows curator-side correction of company content and attachments. Verification state changes are intentionally excluded from this endpoint and must go through the dedicated verification review workflow. The request must include a non-empty audit reason.\n\noperationId: `patchCuratorCompany`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get opportunity detail for moderation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/opportunities/{{opportunityId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "opportunities",
+                "{{opportunityId}}"
+              ],
+              "query": []
+            },
+            "description": "Get opportunity detail for moderation\n\noperationId: `getCuratorOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Correct opportunity content for moderation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "\"string\"",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/opportunities/{{opportunityId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "opportunities",
+                "{{opportunityId}}"
+              ],
+              "query": []
+            },
+            "description": "Allows curator-side correction of opportunity content and related metadata. Moderation decisions are intentionally excluded from this endpoint and must go through moderation cases. The request must include a non-empty audit reason.\n\noperationId: `patchCuratorOpportunity`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List notifications of current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "unreadOnly",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List notifications of current user\n\noperationId: `listNotifications`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get notification preferences for current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/preferences",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "notifications",
+                "preferences"
+              ],
+              "query": []
+            },
+            "description": "Get notification preferences for current user\n\noperationId: `getNotificationPreferences`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update notification preferences for current user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"inAppEnabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notifications/preferences",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "notifications",
+                "preferences"
+              ],
+              "query": []
+            },
+            "description": "Update notification preferences for current user\n\noperationId: `patchNotificationPreferences`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark notification as read",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ],
+              "query": []
+            },
+            "description": "Mark notification as read\n\noperationId: `markNotificationRead`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark all notifications as read",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "notifications",
+                "read-all"
+              ],
+              "query": []
+            },
+            "description": "Mark all notifications as read\n\noperationId: `markAllNotificationsRead`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Uploads",
+      "item": [
+        {
+          "name": "Create pre-signed upload URL for media file",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originalName\": \"string\",\n  \"mimeType\": \"string\",\n  \"fileSize\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/uploads/presign",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "uploads",
+                "presign"
+              ],
+              "query": []
+            },
+            "description": "Create pre-signed upload URL for media file\n\noperationId: `createPresignedUpload`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Finalize upload after client PUT to object storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"etag\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/uploads/{{mediaFileId}}/complete",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "uploads",
+                "{{mediaFileId}}",
+                "complete"
+              ],
+              "query": []
+            },
+            "description": "Client first uploads the binary file directly to object storage using the pre-signed PUT URL returned by /uploads/presign. After that it calls this endpoint so backend can verify that the object exists and finalize the upload record for later attachment to business entities. This operation is idempotent: repeating it for an already finalized file returns the same finalized media record.\n\noperationId: `completeUpload`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get media metadata",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/media/{{mediaFileId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "media",
+                "{{mediaFileId}}"
+              ],
+              "query": []
+            },
+            "description": "Returns media metadata for an authenticated caller who is authorized to view the entity this file is attached to. Public pages should use the signed download URL flow instead of this metadata endpoint.\n\noperationId: `getMediaFile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete media file",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/media/{{mediaFileId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "media",
+                "{{mediaFileId}}"
+              ],
+              "query": []
+            },
+            "description": "Marks the media file as deleted for the current authorized actor and prevents further use. Physical object removal may happen asynchronously. Deletion can be rejected while the file is still attached to an entity that forbids removal.\n\noperationId: `deleteMediaFile`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create temporary signed download URL for media",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/media/{{mediaFileId}}/download-url",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "media",
+                "{{mediaFileId}}",
+                "download-url"
+              ],
+              "query": []
+            },
+            "description": "Backend verifies access and returns a short-lived signed download URL for the requested file. Anonymous access is allowed only when the file is reachable through a public company or opportunity page. Otherwise the caller must be authenticated and authorized to view the entity this file is attached to.\n\noperationId: `createMediaDownloadUrl`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Locations",
+      "item": [
+        {
+          "name": "Search locations by free text",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/locations/search",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "locations",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "string",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Helper endpoint for forms that need reusable location entities. Implementations may use internal data or an external geocoding provider.\n\noperationId: `searchLocations`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create or reuse normalized location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"precision\": \"exact_address\",\n  \"country\": \"string\",\n  \"city\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/locations",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "locations"
+              ],
+              "query": []
+            },
+            "description": "Accepts a location object and returns a normalized stored location that can later be referenced by locationId.\n\noperationId: `createLocation`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "List curator accounts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/curator/admin/curators",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "admin",
+                "curators"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "string",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Available only to the single platform administrator. The platform administrator is also a curator and there can be exactly one such account in the system.\n\noperationId: `listAdminCurators`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Create non-admin curator account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\",\n  \"displayName\": \"string\",\n  \"fullName\": \"string\",\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/admin/curators",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "admin",
+                "curators"
+              ],
+              "query": []
+            },
+            "description": "Available only to the single platform administrator. Creates a non-admin curator account by creating both users and curator_profiles records. Creating another platform administrator through public API is not supported. The request must include an audit reason.\n\noperationId: `createAdminCurator`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Update curator account as platform administrator",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/curator/admin/curators/{{userId}}",
+              "protocol": "{{baseProtocol}}",
+              "host": [
+                "{{baseHost}}"
+              ],
+              "port": "{{basePort}}",
+              "path": [
+                "v1",
+                "curator",
+                "admin",
+                "curators",
+                "{{userId}}"
+              ],
+              "query": []
+            },
+            "description": "Available only to the single platform administrator. Updates a curator account. This endpoint cannot be used to create or assign another administrator. The sole platform administrator must always remain present; requests that would leave the system without an active administrator are rejected. The request must include an audit reason.\n\noperationId: `patchAdminCurator`\n\nAuth: cookie-based session. Use `/auth/login` first; Postman should retain the auth cookies automatically."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080/v1",
+      "enabled": true
+    },
+    {
+      "key": "applicantSocialLinkId",
+      "value": "11111111-1111-1111-1111-111111111701",
+      "enabled": true
+    },
+    {
+      "key": "applicantUserId",
+      "value": "11111111-1111-1111-1111-111111111205",
+      "enabled": true
+    },
+    {
+      "key": "applicationId",
+      "value": "11111111-1111-1111-1111-111111111801",
+      "enabled": true
+    },
+    {
+      "key": "baseHost",
+      "value": "baseHost",
+      "enabled": true
+    },
+    {
+      "key": "basePort",
+      "value": "basePort",
+      "enabled": true
+    },
+    {
+      "key": "baseProtocol",
+      "value": "baseProtocol",
+      "enabled": true
+    },
+    {
+      "key": "bbox",
+      "value": "bbox",
+      "enabled": true
+    },
+    {
+      "key": "campaignId",
+      "value": "11111111-1111-1111-1111-111111112101",
+      "enabled": true
+    },
+    {
+      "key": "city",
+      "value": "city",
+      "enabled": true
+    },
+    {
+      "key": "companyId",
+      "value": "11111111-1111-1111-1111-111111111401",
+      "enabled": true
+    },
+    {
+      "key": "companySlug",
+      "value": "seed-labs",
+      "enabled": true
+    },
+    {
+      "key": "companySocialLinkId",
+      "value": "11111111-1111-1111-1111-111111111431",
+      "enabled": true
+    },
+    {
+      "key": "connectionId",
+      "value": "11111111-1111-1111-1111-111111111901",
+      "enabled": true
+    },
+    {
+      "key": "employmentType",
+      "value": "employmentType",
+      "enabled": true
+    },
+    {
+      "key": "experienceLevel",
+      "value": "experienceLevel",
+      "enabled": true
+    },
+    {
+      "key": "expiresAfter",
+      "value": "expiresAfter",
+      "enabled": true
+    },
+    {
+      "key": "industry",
+      "value": "industry",
+      "enabled": true
+    },
+    {
+      "key": "isActive",
+      "value": "isActive",
+      "enabled": true
+    },
+    {
+      "key": "lat",
+      "value": "lat",
+      "enabled": true
+    },
+    {
+      "key": "lng",
+      "value": "lng",
+      "enabled": true
+    },
+    {
+      "key": "mediaFileId",
+      "value": "11111111-1111-1111-1111-111111111301",
+      "enabled": true
+    },
+    {
+      "key": "mediaId",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "enabled": true
+    },
+    {
+      "key": "membershipId",
+      "value": "11111111-1111-1111-1111-111111111411",
+      "enabled": true
+    },
+    {
+      "key": "moderationCaseId",
+      "value": "11111111-1111-1111-1111-111111112301",
+      "enabled": true
+    },
+    {
+      "key": "moderationStatus",
+      "value": "moderationStatus",
+      "enabled": true
+    },
+    {
+      "key": "notificationId",
+      "value": "11111111-1111-1111-1111-111111112001",
+      "enabled": true
+    },
+    {
+      "key": "opportunityId",
+      "value": "11111111-1111-1111-1111-111111111601",
+      "enabled": true
+    },
+    {
+      "key": "opportunitySlug",
+      "value": "junior-go-backend-internship",
+      "enabled": true
+    },
+    {
+      "key": "page",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "pageSize",
+      "value": "20",
+      "enabled": true
+    },
+    {
+      "key": "participationFormat",
+      "value": "participationFormat",
+      "enabled": true
+    },
+    {
+      "key": "q",
+      "value": "search",
+      "enabled": true
+    },
+    {
+      "key": "radiusKm",
+      "value": "radiusKm",
+      "enabled": true
+    },
+    {
+      "key": "role",
+      "value": "role",
+      "enabled": true
+    },
+    {
+      "key": "salaryFrom",
+      "value": "salaryFrom",
+      "enabled": true
+    },
+    {
+      "key": "salaryTo",
+      "value": "salaryTo",
+      "enabled": true
+    },
+    {
+      "key": "sort",
+      "value": "sort",
+      "enabled": true
+    },
+    {
+      "key": "startsAfter",
+      "value": "startsAfter",
+      "enabled": true
+    },
+    {
+      "key": "status",
+      "value": "status",
+      "enabled": true
+    },
+    {
+      "key": "tagId",
+      "value": "11111111-1111-1111-1111-111111111501",
+      "enabled": true
+    },
+    {
+      "key": "tagIds",
+      "value": "tagIds",
+      "enabled": true
+    },
+    {
+      "key": "targetType",
+      "value": "targetType",
+      "enabled": true
+    },
+    {
+      "key": "type",
+      "value": "type",
+      "enabled": true
+    },
+    {
+      "key": "unreadOnly",
+      "value": "unreadOnly",
+      "enabled": true
+    },
+    {
+      "key": "userId",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "enabled": true
+    },
+    {
+      "key": "verificationRequestId",
+      "value": "11111111-1111-1111-1111-111111112201",
+      "enabled": true
+    },
+    {
+      "key": "view",
+      "value": "view",
+      "enabled": true
+    }
+  ]
+}

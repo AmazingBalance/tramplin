@@ -2,14 +2,12 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
-	"math"
 	"net/http"
-	"strconv"
+	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -17,16 +15,26 @@ import (
 	"tramplin/backend/internal/domain/model"
 	authplatform "tramplin/backend/internal/platform/auth"
 	"tramplin/backend/internal/platform/httpx"
+	objectstoreplatform "tramplin/backend/internal/platform/objectstore"
 	postgresplatform "tramplin/backend/internal/platform/postgres"
 	commonstore "tramplin/backend/internal/store"
 	pgstore "tramplin/backend/internal/store/postgres"
 )
 
 type Server struct {
-	cfg   config.Config
-	db    *pgxpool.Pool
-	store commonstore.Repository
-	mux   *http.ServeMux
+	cfg     config.Config
+	db      *pgxpool.Pool
+	store   commonstore.Repository
+	objects objectstoreplatform.Store
+	mux     *http.ServeMux
+}
+
+type ServerOption func(*Server)
+
+func WithObjectStore(store objectstoreplatform.Store) ServerOption {
+	return func(s *Server) {
+		s.objects = store
+	}
 }
 
 type registerApplicantRequest struct {
@@ -57,6 +65,17 @@ type putUISettingsRequest struct {
 	SchemaVersion *int           `json:"schemaVersion"`
 }
 
+type createPresignedUploadRequest struct {
+	OriginalName string  `json:"originalName"`
+	MimeType     string  `json:"mimeType"`
+	FileSize     int64   `json:"fileSize"`
+	Purpose      *string `json:"purpose"`
+}
+
+type completeUploadRequest struct {
+	ETag *string `json:"etag"`
+}
+
 type updateApplicantProfileRequest struct {
 	FirstName      *string `json:"firstName"`
 	LastName       *string `json:"lastName"`
@@ -84,10 +103,74 @@ type replaceApplicantTagsRequest struct {
 	TagIDs []string `json:"tagIds"`
 }
 
+type createApplicantSocialLinkRequest struct {
+	Platform string `json:"platform"`
+	URL      string `json:"url"`
+	IsPublic *bool  `json:"isPublic"`
+}
+
+type updateApplicantSocialLinkRequest struct {
+	Platform *string `json:"platform"`
+	URL      *string `json:"url"`
+	IsPublic *bool   `json:"isPublic"`
+}
+
+type saveOpportunityRequest struct {
+	OpportunityID string `json:"opportunityId"`
+}
+
+type saveCompanyRequest struct {
+	CompanyID string `json:"companyId"`
+}
+
 type updateEmployerProfileRequest struct {
 	FullName *string `json:"fullName"`
 	JobTitle *string `json:"jobTitle"`
 	Phone    *string `json:"phone"`
+}
+
+type updateCuratorUserRequest struct {
+	DisplayName *string `json:"displayName"`
+	IsActive    *bool   `json:"isActive"`
+	Reason      string  `json:"reason"`
+}
+
+type updateCuratorApplicantRequest struct {
+	FirstName      *string                        `json:"firstName"`
+	LastName       *string                        `json:"lastName"`
+	MiddleName     *string                        `json:"middleName"`
+	UniversityName *string                        `json:"universityName"`
+	Faculty        *string                        `json:"faculty"`
+	ProgramName    *string                        `json:"programName"`
+	StudyYear      *int                           `json:"studyYear"`
+	GraduationYear *int                           `json:"graduationYear"`
+	City           *string                        `json:"city"`
+	About          *string                        `json:"about"`
+	ResumeMediaID  *string                        `json:"resumeMediaId"`
+	Privacy        *updateApplicantPrivacyRequest `json:"privacy"`
+	Reason         string                         `json:"reason"`
+}
+
+type updateCuratorEmployerRequest struct {
+	FullName *string `json:"fullName"`
+	JobTitle *string `json:"jobTitle"`
+	Phone    *string `json:"phone"`
+	Reason   string  `json:"reason"`
+}
+
+type createCuratorRequest struct {
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	DisplayName string `json:"displayName"`
+	FullName    string `json:"fullName"`
+	Reason      string `json:"reason"`
+}
+
+type updateCuratorAccountRequest struct {
+	DisplayName *string `json:"displayName"`
+	FullName    *string `json:"fullName"`
+	IsActive    *bool   `json:"isActive"`
+	Reason      string  `json:"reason"`
 }
 
 type locationInputRequest struct {
@@ -132,6 +215,22 @@ type updateCompanyRequest struct {
 	HeadquartersLocation   *locationInputRequest `json:"headquartersLocation"`
 }
 
+type updateCuratorCompanyRequest struct {
+	LegalName              *string               `json:"legalName"`
+	BrandName              *string               `json:"brandName"`
+	Slug                   *string               `json:"slug"`
+	INN                    *string               `json:"inn"`
+	Description            *string               `json:"description"`
+	Industry               *string               `json:"industry"`
+	WebsiteURL             *string               `json:"websiteUrl"`
+	CorporateEmailDomain   *string               `json:"corporateEmailDomain"`
+	HeadquartersLocationID *string               `json:"headquartersLocationId"`
+	LogoMediaID            *string               `json:"logoMediaId"`
+	BannerMediaID          *string               `json:"bannerMediaId"`
+	HeadquartersLocation   *locationInputRequest `json:"headquartersLocation"`
+	Reason                 string                `json:"reason"`
+}
+
 type createCompanyMembershipRequest struct {
 	EmployerEmail    string  `json:"employerEmail"`
 	MemberRole       string  `json:"memberRole"`
@@ -144,12 +243,81 @@ type updateCompanyMembershipRequest struct {
 	IsPrimaryContact *bool   `json:"isPrimaryContact"`
 }
 
+type createCompanySocialLinkRequest struct {
+	Platform string `json:"platform"`
+	URL      string `json:"url"`
+}
+
+type updateCompanySocialLinkRequest struct {
+	Platform *string `json:"platform"`
+	URL      *string `json:"url"`
+}
+
+type createCompanyMediaRequest struct {
+	MediaFileID string  `json:"mediaFileId"`
+	Title       *string `json:"title"`
+	SortOrder   *int    `json:"sortOrder"`
+}
+
+type updateCompanyMediaRequest struct {
+	Title     *string `json:"title"`
+	SortOrder *int    `json:"sortOrder"`
+}
+
 type approveCompanyMembershipRequest struct {
 	Comment *string `json:"comment"`
 }
 
 type commentRequest struct {
 	Comment string `json:"comment"`
+}
+
+type createTagRequest struct {
+	Name     string `json:"name"`
+	TagType  string `json:"tagType"`
+	IsActive *bool  `json:"isActive"`
+}
+
+type updateTagRequest struct {
+	Name     *string `json:"name"`
+	IsActive *bool   `json:"isActive"`
+}
+
+type createModerationCaseRequest struct {
+	TargetType string `json:"targetType"`
+	TargetID   string `json:"targetId"`
+	Reason     string `json:"reason"`
+}
+
+type updateModerationCaseRequest struct {
+	AssignedCuratorUserID *string `json:"assignedCuratorUserId"`
+	Status                *string `json:"status"`
+	Reason                string  `json:"reason"`
+}
+
+type createApplicationRequest struct {
+	OpportunityID string  `json:"opportunityId"`
+	CoverLetter   *string `json:"coverLetter"`
+}
+
+type updateApplicationStatusRequest struct {
+	Status  string  `json:"status"`
+	Comment *string `json:"comment"`
+}
+
+type createConnectionRequest struct {
+	TargetApplicantUserID string  `json:"targetApplicantUserId"`
+	InitiatorNote         *string `json:"initiatorNote"`
+}
+
+type updateConnectionRequest struct {
+	Status string `json:"status"`
+}
+
+type createOpportunityRecommendationRequest struct {
+	RecipientUserID string  `json:"recipientUserId"`
+	OpportunityID   string  `json:"opportunityId"`
+	Message         *string `json:"message"`
 }
 
 type opportunityVacancyDetailsRequest struct {
@@ -233,6 +401,28 @@ type updateOpportunityRequest struct {
 	Location             *locationInputRequest                   `json:"location"`
 }
 
+type updateCuratorOpportunityRequest struct {
+	Title                *string                                 `json:"title"`
+	Summary              *string                                 `json:"summary"`
+	Slug                 *string                                 `json:"slug"`
+	Description          *string                                 `json:"description"`
+	ParticipationFormat  *string                                 `json:"participationFormat"`
+	LocationID           *string                                 `json:"locationId"`
+	ContactEmail         *string                                 `json:"contactEmail"`
+	ContactPhone         *string                                 `json:"contactPhone"`
+	CoverMediaID         *string                                 `json:"coverMediaId"`
+	PublishedAt          *string                                 `json:"publishedAt"`
+	ExpiresAt            *string                                 `json:"expiresAt"`
+	TagIDs               *[]string                               `json:"tagIds"`
+	VacancyDetails       *opportunityVacancyDetailsRequest       `json:"vacancyDetails"`
+	MentorProgramDetails *opportunityMentorProgramDetailsRequest `json:"mentorProgramDetails"`
+	EventDetails         *opportunityEventDetailsRequest         `json:"eventDetails"`
+	Links                *[]opportunityLinkInputRequest          `json:"links"`
+	Media                *[]opportunityMediaInputRequest         `json:"media"`
+	Location             *locationInputRequest                   `json:"location"`
+	Reason               string                                  `json:"reason"`
+}
+
 type patchNotificationPreferencesRequest struct {
 	InAppEnabled             *bool `json:"inAppEnabled"`
 	EmailEnabled             *bool `json:"emailEnabled"`
@@ -242,12 +432,44 @@ type patchNotificationPreferencesRequest struct {
 	SystemEnabled            *bool `json:"systemEnabled"`
 }
 
-func NewServer(cfg config.Config, db *pgxpool.Pool) http.Handler {
+type createNotificationCampaignRequest struct {
+	CompanyID        string   `json:"companyId"`
+	OpportunityID    *string  `json:"opportunityId"`
+	AudienceType     string   `json:"audienceType"`
+	Title            string   `json:"title"`
+	Body             string   `json:"body"`
+	SendViaInApp     *bool    `json:"sendViaInApp"`
+	SendViaEmail     *bool    `json:"sendViaEmail"`
+	ScheduledAt      *string  `json:"scheduledAt"`
+	ApplicantUserIDs []string `json:"applicantUserIds"`
+}
+
+type verificationEvidenceInputRequest struct {
+	EvidenceType   string  `json:"evidenceType"`
+	Value          *string `json:"value"`
+	EvidenceFileID *string `json:"evidenceFileId"`
+}
+
+type createVerificationRequestRequest struct {
+	Method           string                             `json:"method"`
+	SubmittedComment *string                            `json:"submittedComment"`
+	Evidence         []verificationEvidenceInputRequest `json:"evidence"`
+}
+
+type reviewVerificationRequestRequest struct {
+	Status        string  `json:"status"`
+	ReviewComment *string `json:"reviewComment"`
+}
+
+func NewServer(cfg config.Config, db *pgxpool.Pool, opts ...ServerOption) http.Handler {
 	server := &Server{
 		cfg:   cfg,
 		db:    db,
 		store: pgstore.New(db),
 		mux:   http.NewServeMux(),
+	}
+	for _, opt := range opts {
+		opt(server)
 	}
 	server.registerRoutes()
 	base := server.withCORS(server.mux)
@@ -279,6 +501,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	s.mux.HandleFunc("POST /auth/logout-all", s.handleLogoutAll)
 	s.mux.HandleFunc("GET /auth/me", s.handleGetMe)
+	s.mux.HandleFunc("POST /uploads/presign", s.handleCreatePresignedUpload)
+	s.mux.HandleFunc("POST /uploads/{mediaFileId}/complete", s.handleCompleteUpload)
+	s.mux.HandleFunc("GET /media/{mediaFileId}", s.handleGetMediaFile)
+	s.mux.HandleFunc("DELETE /media/{mediaFileId}", s.handleDeleteMediaFile)
+	s.mux.HandleFunc("POST /media/{mediaFileId}/download-url", s.handleCreateMediaDownloadURL)
 
 	s.mux.HandleFunc("GET /me/ui-settings", s.handleGetUISettings)
 	s.mux.HandleFunc("PUT /me/ui-settings", s.handlePutUISettings)
@@ -289,6 +516,27 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /me/applicant/privacy", s.handlePatchApplicantPrivacy)
 	s.mux.HandleFunc("GET /me/applicant/tags", s.handleListApplicantTags)
 	s.mux.HandleFunc("PUT /me/applicant/tags", s.handleReplaceApplicantTags)
+	s.mux.HandleFunc("GET /me/applicant/social-links", s.handleListMyApplicantSocialLinks)
+	s.mux.HandleFunc("POST /me/applicant/social-links", s.handleCreateMyApplicantSocialLink)
+	s.mux.HandleFunc("PATCH /me/applicant/social-links/{linkId}", s.handlePatchMyApplicantSocialLink)
+	s.mux.HandleFunc("DELETE /me/applicant/social-links/{linkId}", s.handleDeleteMyApplicantSocialLink)
+	s.mux.HandleFunc("GET /applicants/{userId}", s.handleGetApplicantProfileByID)
+	s.mux.HandleFunc("GET /me/saved-opportunities", s.handleListSavedOpportunities)
+	s.mux.HandleFunc("POST /me/saved-opportunities", s.handleSaveOpportunity)
+	s.mux.HandleFunc("DELETE /me/saved-opportunities/{opportunityId}", s.handleDeleteSavedOpportunity)
+	s.mux.HandleFunc("GET /me/saved-companies", s.handleListSavedCompanies)
+	s.mux.HandleFunc("POST /me/saved-companies", s.handleSaveCompany)
+	s.mux.HandleFunc("DELETE /me/saved-companies/{companyId}", s.handleDeleteSavedCompany)
+	s.mux.HandleFunc("GET /me/connections", s.handleListMyConnections)
+	s.mux.HandleFunc("POST /me/connections", s.handleCreateConnection)
+	s.mux.HandleFunc("PATCH /me/connections/{connectionId}", s.handlePatchConnection)
+	s.mux.HandleFunc("POST /me/recommendations", s.handleCreateOpportunityRecommendation)
+	s.mux.HandleFunc("GET /me/recommendations/received", s.handleListReceivedRecommendations)
+	s.mux.HandleFunc("GET /me/recommendations/sent", s.handleListSentRecommendations)
+	s.mux.HandleFunc("GET /me/applications", s.handleListMyApplications)
+	s.mux.HandleFunc("POST /me/applications", s.handleCreateApplication)
+	s.mux.HandleFunc("GET /me/applications/{applicationId}", s.handleGetMyApplication)
+	s.mux.HandleFunc("POST /me/applications/{applicationId}/withdraw", s.handleWithdrawMyApplication)
 
 	s.mux.HandleFunc("GET /employer/profile", s.handleGetEmployerProfile)
 	s.mux.HandleFunc("PATCH /employer/profile", s.handlePatchEmployerProfile)
@@ -304,10 +552,33 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /employer/companies/{companyId}/memberships/{membershipId}/approve", s.handleApproveCompanyMembership)
 	s.mux.HandleFunc("POST /employer/companies/{companyId}/memberships/{membershipId}/reject", s.handleRejectCompanyMembership)
 	s.mux.HandleFunc("POST /employer/companies/{companyId}/memberships/{membershipId}/revoke", s.handleRevokeCompanyMembership)
+	s.mux.HandleFunc("GET /employer/companies/{companyId}/social-links", s.handleListEmployerCompanySocialLinks)
+	s.mux.HandleFunc("POST /employer/companies/{companyId}/social-links", s.handleCreateEmployerCompanySocialLink)
+	s.mux.HandleFunc("PATCH /employer/companies/{companyId}/social-links/{linkId}", s.handlePatchEmployerCompanySocialLink)
+	s.mux.HandleFunc("DELETE /employer/companies/{companyId}/social-links/{linkId}", s.handleDeleteEmployerCompanySocialLink)
+	s.mux.HandleFunc("GET /employer/companies/{companyId}/media", s.handleListEmployerCompanyMedia)
+	s.mux.HandleFunc("POST /employer/companies/{companyId}/media", s.handleCreateEmployerCompanyMedia)
+	s.mux.HandleFunc("PATCH /employer/companies/{companyId}/media/{mediaId}", s.handlePatchEmployerCompanyMedia)
+	s.mux.HandleFunc("DELETE /employer/companies/{companyId}/media/{mediaId}", s.handleDeleteEmployerCompanyMedia)
+	s.mux.HandleFunc("GET /employer/companies/{companyId}/verification-requests", s.handleListCompanyVerificationRequests)
+	s.mux.HandleFunc("POST /employer/companies/{companyId}/verification-requests", s.handleCreateCompanyVerificationRequest)
+	s.mux.HandleFunc("GET /employer/applicants/{userId}", s.handleGetEmployerApplicantProfile)
 	s.mux.HandleFunc("GET /employer/opportunities", s.handleListEmployerOpportunities)
 	s.mux.HandleFunc("POST /employer/opportunities", s.handleCreateOpportunity)
 	s.mux.HandleFunc("GET /employer/opportunities/{opportunityId}", s.handleGetEmployerOpportunity)
 	s.mux.HandleFunc("PATCH /employer/opportunities/{opportunityId}", s.handlePatchEmployerOpportunity)
+	s.mux.HandleFunc("POST /employer/opportunities/{opportunityId}/activate", s.handleActivateEmployerOpportunity)
+	s.mux.HandleFunc("POST /employer/opportunities/{opportunityId}/close", s.handleCloseEmployerOpportunity)
+	s.mux.HandleFunc("POST /employer/opportunities/{opportunityId}/archive", s.handleArchiveEmployerOpportunity)
+	s.mux.HandleFunc("GET /employer/opportunities/{opportunityId}/applications", s.handleListOpportunityApplications)
+	s.mux.HandleFunc("PATCH /employer/applications/{applicationId}/status", s.handlePatchApplicationStatus)
+	s.mux.HandleFunc("GET /employer/notification-campaigns", s.handleListNotificationCampaigns)
+	s.mux.HandleFunc("POST /employer/notification-campaigns", s.handleCreateNotificationCampaign)
+	s.mux.HandleFunc("GET /employer/notification-campaigns/{campaignId}", s.handleGetNotificationCampaign)
+	s.mux.HandleFunc("PATCH /employer/notification-campaigns/{campaignId}", s.handlePatchNotificationCampaign)
+	s.mux.HandleFunc("POST /employer/notification-campaigns/{campaignId}/send", s.handleSendNotificationCampaign)
+	s.mux.HandleFunc("POST /employer/notification-campaigns/{campaignId}/cancel", s.handleCancelNotificationCampaign)
+	s.mux.HandleFunc("POST /employer/tags", s.handleCreateEmployerTag)
 
 	s.mux.HandleFunc("GET /public/companies", s.handleListPublicCompanies)
 	s.mux.HandleFunc("GET /public/companies/{companyId}", s.handleGetPublicCompany)
@@ -326,84 +597,29 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /notifications/read-all", s.handleMarkAllNotificationsRead)
 	s.mux.HandleFunc("POST /notifications/{notificationId}/read", s.handleMarkNotificationRead)
 
-	for _, route := range []struct {
-		Pattern   string
-		Operation string
-	}{
-		{"POST /uploads/presign", "createPresignedUpload"},
-		{"POST /uploads/{mediaFileId}/complete", "completeUpload"},
-		{"GET /media/{mediaFileId}", "getMediaFile"},
-		{"DELETE /media/{mediaFileId}", "deleteMediaFile"},
-		{"POST /media/{mediaFileId}/download-url", "createMediaDownloadUrl"},
-		{"GET /me/applicant/social-links", "listMyApplicantSocialLinks"},
-		{"POST /me/applicant/social-links", "createMyApplicantSocialLink"},
-		{"DELETE /me/applicant/social-links/{linkId}", "deleteMyApplicantSocialLink"},
-		{"PATCH /me/applicant/social-links/{linkId}", "patchMyApplicantSocialLink"},
-		{"GET /me/applications", "listMyApplications"},
-		{"POST /me/applications", "createApplication"},
-		{"GET /me/applications/{applicationId}", "getMyApplication"},
-		{"POST /me/applications/{applicationId}/withdraw", "withdrawMyApplication"},
-		{"GET /me/saved-opportunities", "listSavedOpportunities"},
-		{"POST /me/saved-opportunities", "saveOpportunity"},
-		{"DELETE /me/saved-opportunities/{opportunityId}", "deleteSavedOpportunity"},
-		{"GET /me/saved-companies", "listSavedCompanies"},
-		{"POST /me/saved-companies", "saveCompany"},
-		{"DELETE /me/saved-companies/{companyId}", "deleteSavedCompany"},
-		{"GET /me/connections", "listMyConnections"},
-		{"POST /me/connections", "createConnection"},
-		{"PATCH /me/connections/{connectionId}", "patchConnection"},
-		{"POST /me/recommendations", "createOpportunityRecommendation"},
-		{"GET /applicants/{userId}", "getApplicantProfileById"},
-		{"GET /employer/applicants/{userId}", "getEmployerApplicantProfile"},
-		{"GET /me/recommendations/received", "listReceivedRecommendations"},
-		{"GET /me/recommendations/sent", "listSentRecommendations"},
-		{"GET /employer/companies/{companyId}/verification-requests", "listCompanyVerificationRequests"},
-		{"POST /employer/companies/{companyId}/verification-requests", "createCompanyVerificationRequest"},
-		{"GET /employer/companies/{companyId}/social-links", "listEmployerCompanySocialLinks"},
-		{"POST /employer/companies/{companyId}/social-links", "createEmployerCompanySocialLink"},
-		{"PATCH /employer/companies/{companyId}/social-links/{linkId}", "patchEmployerCompanySocialLink"},
-		{"DELETE /employer/companies/{companyId}/social-links/{linkId}", "deleteEmployerCompanySocialLink"},
-		{"GET /employer/companies/{companyId}/media", "listEmployerCompanyMedia"},
-		{"POST /employer/companies/{companyId}/media", "createEmployerCompanyMedia"},
-		{"PATCH /employer/companies/{companyId}/media/{mediaId}", "patchEmployerCompanyMedia"},
-		{"DELETE /employer/companies/{companyId}/media/{mediaId}", "deleteEmployerCompanyMedia"},
-		{"POST /employer/opportunities/{opportunityId}/activate", "activateEmployerOpportunity"},
-		{"POST /employer/opportunities/{opportunityId}/close", "closeEmployerOpportunity"},
-		{"POST /employer/opportunities/{opportunityId}/archive", "archiveEmployerOpportunity"},
-		{"GET /employer/opportunities/{opportunityId}/applications", "listOpportunityApplications"},
-		{"PATCH /employer/applications/{applicationId}/status", "patchApplicationStatus"},
-		{"GET /employer/notification-campaigns", "listNotificationCampaigns"},
-		{"POST /employer/notification-campaigns", "createNotificationCampaign"},
-		{"GET /employer/notification-campaigns/{campaignId}", "getNotificationCampaign"},
-		{"PATCH /employer/notification-campaigns/{campaignId}", "patchNotificationCampaign"},
-		{"POST /employer/notification-campaigns/{campaignId}/send", "sendNotificationCampaign"},
-		{"POST /employer/notification-campaigns/{campaignId}/cancel", "cancelNotificationCampaign"},
-		{"POST /employer/tags", "createEmployerTag"},
-		{"GET /curator/verification-requests", "listCuratorVerificationRequests"},
-		{"PATCH /curator/verification-requests/{verificationRequestId}/review", "reviewVerificationRequest"},
-		{"GET /curator/moderation-cases", "listModerationCases"},
-		{"POST /curator/moderation-cases", "createModerationCase"},
-		{"PATCH /curator/moderation-cases/{moderationCaseId}", "patchModerationCase"},
-		{"GET /curator/tags", "listCuratorTags"},
-		{"POST /curator/tags", "createCuratorTag"},
-		{"PATCH /curator/tags/{tagId}", "patchCuratorTag"},
-		{"GET /curator/users", "listCuratorUsers"},
-		{"GET /curator/users/{userId}", "getCuratorUser"},
-		{"PATCH /curator/users/{userId}", "patchCuratorUser"},
-		{"GET /curator/applicants/{userId}", "getCuratorApplicant"},
-		{"PATCH /curator/applicants/{userId}", "patchCuratorApplicant"},
-		{"GET /curator/employers/{userId}", "getCuratorEmployer"},
-		{"PATCH /curator/employers/{userId}", "patchCuratorEmployer"},
-		{"GET /curator/companies/{companyId}", "getCuratorCompany"},
-		{"PATCH /curator/companies/{companyId}", "patchCuratorCompany"},
-		{"GET /curator/opportunities/{opportunityId}", "getCuratorOpportunity"},
-		{"PATCH /curator/opportunities/{opportunityId}", "patchCuratorOpportunity"},
-		{"GET /curator/admin/curators", "listAdminCurators"},
-		{"POST /curator/admin/curators", "createAdminCurator"},
-		{"PATCH /curator/admin/curators/{userId}", "patchAdminCurator"},
-	} {
-		s.mux.HandleFunc(route.Pattern, s.handleNotImplemented(route.Operation))
-	}
+	s.mux.HandleFunc("GET /curator/verification-requests", s.handleListCuratorVerificationRequests)
+	s.mux.HandleFunc("PATCH /curator/verification-requests/{verificationRequestId}/review", s.handleReviewVerificationRequest)
+	s.mux.HandleFunc("GET /curator/moderation-cases", s.handleListModerationCases)
+	s.mux.HandleFunc("POST /curator/moderation-cases", s.handleCreateModerationCase)
+	s.mux.HandleFunc("PATCH /curator/moderation-cases/{moderationCaseId}", s.handlePatchModerationCase)
+	s.mux.HandleFunc("GET /curator/tags", s.handleListCuratorTags)
+	s.mux.HandleFunc("POST /curator/tags", s.handleCreateCuratorTag)
+	s.mux.HandleFunc("PATCH /curator/tags/{tagId}", s.handlePatchCuratorTag)
+	s.mux.HandleFunc("GET /curator/users", s.handleListCuratorUsers)
+	s.mux.HandleFunc("GET /curator/users/{userId}", s.handleGetCuratorUser)
+	s.mux.HandleFunc("PATCH /curator/users/{userId}", s.handlePatchCuratorUser)
+	s.mux.HandleFunc("GET /curator/applicants/{userId}", s.handleGetCuratorApplicant)
+	s.mux.HandleFunc("PATCH /curator/applicants/{userId}", s.handlePatchCuratorApplicant)
+	s.mux.HandleFunc("GET /curator/employers/{userId}", s.handleGetCuratorEmployer)
+	s.mux.HandleFunc("PATCH /curator/employers/{userId}", s.handlePatchCuratorEmployer)
+	s.mux.HandleFunc("GET /curator/companies/{companyId}", s.handleGetCuratorCompany)
+	s.mux.HandleFunc("PATCH /curator/companies/{companyId}", s.handlePatchCuratorCompany)
+	s.mux.HandleFunc("GET /curator/opportunities/{opportunityId}", s.handleGetCuratorOpportunity)
+	s.mux.HandleFunc("PATCH /curator/opportunities/{opportunityId}", s.handlePatchCuratorOpportunity)
+	s.mux.HandleFunc("GET /curator/admin/curators", s.handleListAdminCurators)
+	s.mux.HandleFunc("POST /curator/admin/curators", s.handleCreateAdminCurator)
+	s.mux.HandleFunc("PATCH /curator/admin/curators/{userId}", s.handlePatchAdminCurator)
+
 }
 
 func (s *Server) handleLive(w http.ResponseWriter, _ *http.Request) {
@@ -449,13 +665,22 @@ func (s *Server) handleRegisterApplicant(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "required fields are missing", nil)
 		return
 	}
+	email, appErr := parseRequiredEmail(req.Email, "email")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if utf8.RuneCountInString(req.Password) < 8 {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "password must be at least 8 characters", nil)
+		return
+	}
 	hash, err := authplatform.HashPassword(req.Password)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to hash password", nil)
 		return
 	}
 	user, appErr := s.store.CreateApplicant(model.RegisterApplicantInput{
-		Email:       req.Email,
+		Email:       email,
 		Password:    req.Password,
 		DisplayName: req.DisplayName,
 		FirstName:   req.FirstName,
@@ -467,7 +692,12 @@ func (s *Server) handleRegisterApplicant(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.writeAuthCookies(w, user)
-	httpx.WriteJSON(w, http.StatusCreated, s.authUserResponse(user))
+	response, appErr := s.authUserResponse(user)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handleRegisterEmployer(w http.ResponseWriter, r *http.Request) {
@@ -480,13 +710,22 @@ func (s *Server) handleRegisterEmployer(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "required fields are missing", nil)
 		return
 	}
+	email, appErr := parseRequiredEmail(req.Email, "email")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if utf8.RuneCountInString(req.Password) < 8 {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "password must be at least 8 characters", nil)
+		return
+	}
 	hash, err := authplatform.HashPassword(req.Password)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to hash password", nil)
 		return
 	}
 	user, appErr := s.store.CreateEmployer(model.RegisterEmployerInput{
-		Email:       req.Email,
+		Email:       email,
 		Password:    req.Password,
 		DisplayName: req.DisplayName,
 		FullName:    req.FullName,
@@ -498,7 +737,12 @@ func (s *Server) handleRegisterEmployer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.writeAuthCookies(w, user)
-	httpx.WriteJSON(w, http.StatusCreated, s.authUserResponse(user))
+	response, appErr := s.authUserResponse(user)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -507,7 +751,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
 		return
 	}
-	user, appErr := s.store.GetUserByEmail(req.Email)
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Password) == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "required fields are missing", nil)
+		return
+	}
+	email, appErr := parseRequiredEmail(req.Email, "email")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	user, appErr := s.store.GetUserByEmail(email)
 	if appErr != nil {
 		s.writeAppError(w, appErr)
 		return
@@ -523,7 +776,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.store.TouchLastLogin(user.ID)
 	user, _ = s.store.GetUserByID(user.ID)
 	s.writeAuthCookies(w, user)
-	httpx.WriteJSON(w, http.StatusOK, s.authUserResponse(user))
+	response, appErr := s.authUserResponse(user)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -533,7 +791,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeAuthCookies(w, user)
-	httpx.WriteJSON(w, http.StatusOK, s.authUserResponse(user))
+	response, appErr := s.authUserResponse(user)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
@@ -558,7 +821,190 @@ func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request) {
 		s.writeAppError(w, appErr)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.currentUserResponse(user))
+	response, appErr := s.currentUserResponse(user)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleCreatePresignedUpload(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if s.objects == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "object storage is not configured", nil)
+		return
+	}
+
+	var req createPresignedUploadRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	file, repoErr := s.store.CreatePresignedUpload(user.ID, model.CreatePresignedUploadInput{
+		OriginalName: req.OriginalName,
+		MimeType:     req.MimeType,
+		FileSize:     req.FileSize,
+		Purpose:      req.Purpose,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	upload, err := s.objects.PresignUpload(r.Context(), file.ObjectKey, req.MimeType, s.cfg.UploadURLTTL)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to create upload url", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"uploadUrl":       s.externalObjectURL(upload.URL),
+		"method":          upload.Method,
+		"headers":         upload.Headers,
+		"uploadExpiresAt": timestamp(upload.ExpiresAt),
+		"file":            s.mediaFileResponse(file),
+	})
+}
+
+func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if s.objects == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "object storage is not configured", nil)
+		return
+	}
+
+	var req completeUploadRequest
+	if err := decodeOptionalJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	file, repoErr := s.store.GetMediaFile(user.ID, r.PathValue("mediaFileId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	info, err := s.objects.StatObject(r.Context(), file.ObjectKey)
+	if err != nil {
+		if errors.Is(err, objectstoreplatform.ErrObjectNotFound) {
+			httpx.WriteError(w, http.StatusConflict, "conflict", "file was not uploaded or cannot be finalized", nil)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to finalize upload", nil)
+		return
+	}
+
+	file, repoErr = s.store.CompleteUpload(user.ID, file.ID, model.CompleteUploadInput{
+		ETag: req.ETag,
+	}, &info.ETag)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, s.mediaFileResponse(file))
+}
+
+func (s *Server) handleGetMediaFile(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	file, repoErr := s.store.GetMediaFile(user.ID, r.PathValue("mediaFileId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.mediaFileResponse(file))
+}
+
+func (s *Server) handleDeleteMediaFile(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	file, repoErr := s.store.DeleteMediaFile(user.ID, r.PathValue("mediaFileId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	if s.objects != nil {
+		_ = s.objects.DeleteObject(r.Context(), file.ObjectKey)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleCreateMediaDownloadURL(w http.ResponseWriter, r *http.Request) {
+	if s.objects == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "service_unavailable", "object storage is not configured", nil)
+		return
+	}
+
+	var actorUserID *string
+	if user := s.maybeAccessUser(r); user != nil {
+		userID := user.ID
+		actorUserID = &userID
+	}
+
+	file, repoErr := s.store.GetMediaFileForDownload(actorUserID, r.PathValue("mediaFileId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	download, err := s.objects.PresignDownload(r.Context(), file.ObjectKey, s.cfg.DownloadURLTTL)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to create download url", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"downloadUrl": s.externalObjectURL(download.URL),
+		"expiresAt":   timestamp(download.ExpiresAt),
+	})
+}
+
+func (s *Server) externalObjectURL(raw string) string {
+	if raw == "" || s.cfg.ObjectStoragePublicURL == "" {
+		return raw
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+
+	publicURL := s.cfg.ObjectStoragePublicURL
+	if strings.Contains(publicURL, "://") {
+		publicParsed, err := url.Parse(publicURL)
+		if err != nil || publicParsed.Host == "" {
+			return raw
+		}
+		parsed.Host = publicParsed.Host
+		parsed.Scheme = publicParsed.Scheme
+		return parsed.String()
+	}
+
+	parsed.Host = publicURL
+	if s.cfg.ObjectStoragePublicSSL {
+		parsed.Scheme = "https"
+	} else {
+		parsed.Scheme = "http"
+	}
+	return parsed.String()
 }
 
 func (s *Server) handleGetUISettings(w http.ResponseWriter, r *http.Request) {
@@ -686,6 +1132,20 @@ func (s *Server) handlePatchApplicantPrivacy(w http.ResponseWriter, r *http.Requ
 	httpx.WriteJSON(w, http.StatusOK, s.applicantPrivacyResponse(privacy))
 }
 
+func (s *Server) handleGetApplicantProfileByID(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	view, repoErr := s.store.GetApplicantProfileView(user.ID, r.PathValue("userId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.applicantProfileViewResponse(view))
+}
+
 func (s *Server) handleListApplicantTags(w http.ResponseWriter, r *http.Request) {
 	user, appErr := s.requireAccessUser(r)
 	if appErr != nil {
@@ -721,6 +1181,484 @@ func (s *Server) handleReplaceApplicantTags(w http.ResponseWriter, r *http.Reque
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"items": s.tagsResponse(tags),
 	})
+}
+
+func (s *Server) handleListMyApplicantSocialLinks(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	links, repoErr := s.store.ListApplicantSocialLinks(user.ID)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.applicantSocialLinksResponse(links),
+	})
+}
+
+func (s *Server) handleCreateMyApplicantSocialLink(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req createApplicantSocialLinkRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	linkURL, repoErr := parseRequiredURI(req.URL, "url")
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	isPublic := true
+	if req.IsPublic != nil {
+		isPublic = *req.IsPublic
+	}
+	link, repoErr := s.store.CreateApplicantSocialLink(user.ID, model.CreateApplicantSocialLinkInput{
+		Platform: req.Platform,
+		URL:      linkURL,
+		IsPublic: isPublic,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.applicantSocialLinkResponse(link))
+}
+
+func (s *Server) handlePatchMyApplicantSocialLink(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req updateApplicantSocialLinkRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if req.Platform == nil && req.URL == nil && req.IsPublic == nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "at least one field is required", nil)
+		return
+	}
+	linkURL, repoErr := parseOptionalURI(req.URL, "url")
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	link, repoErr := s.store.UpdateApplicantSocialLink(user.ID, r.PathValue("linkId"), model.UpdateApplicantSocialLinkInput{
+		Platform: req.Platform,
+		URL:      linkURL,
+		IsPublic: req.IsPublic,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.applicantSocialLinkResponse(link))
+}
+
+func (s *Server) handleDeleteMyApplicantSocialLink(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	if repoErr := s.store.DeleteApplicantSocialLink(user.ID, r.PathValue("linkId")); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListSavedOpportunities(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	items, repoErr := s.store.ListSavedOpportunities(user.ID)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.savedOpportunitiesResponse(items),
+	})
+}
+
+func (s *Server) handleSaveOpportunity(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req saveOpportunityRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if repoErr := s.store.SaveOpportunity(user.ID, model.SaveOpportunityInput{OpportunityID: req.OpportunityID}); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) handleDeleteSavedOpportunity(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	if repoErr := s.store.DeleteSavedOpportunity(user.ID, r.PathValue("opportunityId")); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListSavedCompanies(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	items, repoErr := s.store.ListSavedCompanies(user.ID)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.savedCompaniesResponse(items),
+	})
+}
+
+func (s *Server) handleSaveCompany(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req saveCompanyRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if repoErr := s.store.SaveCompany(user.ID, model.SaveCompanyInput{CompanyID: req.CompanyID}); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) handleDeleteSavedCompany(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	if repoErr := s.store.DeleteSavedCompany(user.ID, r.PathValue("companyId")); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListMyConnections(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	input, repoErr := buildListConnectionsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, repoErr := s.store.ListConnections(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.connectionsResponse(items),
+	})
+}
+
+func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req createConnectionRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	connection, repoErr := s.store.CreateConnection(user.ID, model.CreateConnectionInput{
+		TargetApplicantUserID: req.TargetApplicantUserID,
+		InitiatorNote:         req.InitiatorNote,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.connectionResponse(connection))
+}
+
+func (s *Server) handlePatchConnection(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req updateConnectionRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if req.Status == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "status is required", nil)
+		return
+	}
+
+	connection, repoErr := s.store.UpdateConnection(user.ID, r.PathValue("connectionId"), model.UpdateConnectionInput{
+		Status: req.Status,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.connectionResponse(connection))
+}
+
+func (s *Server) handleCreateOpportunityRecommendation(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	var req createOpportunityRecommendationRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	recommendation, repoErr := s.store.CreateOpportunityRecommendation(user.ID, model.CreateOpportunityRecommendationInput{
+		RecipientUserID: req.RecipientUserID,
+		OpportunityID:   req.OpportunityID,
+		Message:         req.Message,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.opportunityRecommendationResponse(recommendation))
+}
+
+func (s *Server) handleListReceivedRecommendations(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	items, repoErr := s.store.ListReceivedRecommendations(user.ID)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.opportunityRecommendationsResponse(items),
+	})
+}
+
+func (s *Server) handleListSentRecommendations(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	items, repoErr := s.store.ListSentRecommendations(user.ID)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.opportunityRecommendationsResponse(items),
+	})
+}
+
+func (s *Server) handleListMyApplications(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+	input, repoErr := buildListApplicationsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListApplicantApplications(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.myApplicationsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "only applicants can apply or opportunity is not available for applying", nil)
+		return
+	}
+
+	var req createApplicationRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	application, repoErr := s.store.CreateApplication(user.ID, model.CreateApplicationInput{
+		OpportunityID: req.OpportunityID,
+		CoverLetter:   req.CoverLetter,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.applicationDetailResponse(application))
+}
+
+func (s *Server) handleGetMyApplication(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	application, repoErr := s.store.GetApplicantApplication(user.ID, r.PathValue("applicationId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.applicationDetailResponse(application))
+}
+
+func (s *Server) handleWithdrawMyApplication(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleApplicant {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an applicant", nil)
+		return
+	}
+
+	application, repoErr := s.store.WithdrawApplicantApplication(user.ID, r.PathValue("applicationId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.applicationDetailResponse(application))
 }
 
 func (s *Server) handleGetEmployerProfile(w http.ResponseWriter, r *http.Request) {
@@ -787,6 +1725,11 @@ func (s *Server) handleCreateCompany(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
 		return
 	}
+	websiteURL, appErr := parseOptionalURI(req.WebsiteURL, "websiteUrl")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
 	company, _, appErr := s.store.CreateCompany(user.ID, model.CreateCompanyInput{
 		LegalName:              req.LegalName,
 		BrandName:              req.BrandName,
@@ -794,7 +1737,7 @@ func (s *Server) handleCreateCompany(w http.ResponseWriter, r *http.Request) {
 		INN:                    req.INN,
 		Description:            req.Description,
 		Industry:               req.Industry,
-		WebsiteURL:             req.WebsiteURL,
+		WebsiteURL:             websiteURL,
 		CorporateEmailDomain:   req.CorporateEmailDomain,
 		HeadquartersLocationID: req.HeadquartersLocationID,
 		LogoMediaID:            req.LogoMediaID,
@@ -833,6 +1776,11 @@ func (s *Server) handlePatchEmployerCompany(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
 		return
 	}
+	websiteURL, appErr := parseOptionalURI(req.WebsiteURL, "websiteUrl")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
 	company, appErr := s.store.UpdateCompany(user.ID, r.PathValue("companyId"), model.UpdateCompanyInput{
 		LegalName:              req.LegalName,
 		BrandName:              req.BrandName,
@@ -840,7 +1788,7 @@ func (s *Server) handlePatchEmployerCompany(w http.ResponseWriter, r *http.Reque
 		INN:                    req.INN,
 		Description:            req.Description,
 		Industry:               req.Industry,
-		WebsiteURL:             req.WebsiteURL,
+		WebsiteURL:             websiteURL,
 		CorporateEmailDomain:   req.CorporateEmailDomain,
 		HeadquartersLocationID: req.HeadquartersLocationID,
 		LogoMediaID:            req.LogoMediaID,
@@ -885,8 +1833,13 @@ func (s *Server) handleCreateCompanyMembership(w http.ResponseWriter, r *http.Re
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "required fields are missing", nil)
 		return
 	}
+	employerEmail, appErr := parseRequiredEmail(req.EmployerEmail, "employerEmail")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
 	membership, appErr := s.store.CreateCompanyMembership(user.ID, r.PathValue("companyId"), model.CreateCompanyMembershipInput{
-		EmployerEmail:    req.EmployerEmail,
+		EmployerEmail:    employerEmail,
 		MemberRole:       req.MemberRole,
 		IsPrimaryContact: req.IsPrimaryContact,
 		Comment:          req.Comment,
@@ -981,6 +1934,191 @@ func (s *Server) handleRevokeCompanyMembership(w http.ResponseWriter, r *http.Re
 	httpx.WriteJSON(w, http.StatusOK, s.membershipResponse(membership))
 }
 
+func (s *Server) handleListEmployerCompanySocialLinks(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	links, repoErr := s.store.ListCompanySocialLinks(user.ID, r.PathValue("companyId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.companySocialLinksPointersResponse(links),
+	})
+}
+
+func (s *Server) handleCreateEmployerCompanySocialLink(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	var req createCompanySocialLinkRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	linkURL, repoErr := parseRequiredURI(req.URL, "url")
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	link, repoErr := s.store.CreateCompanySocialLink(user.ID, r.PathValue("companyId"), model.CreateCompanySocialLinkInput{
+		Platform: req.Platform,
+		URL:      linkURL,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.companySocialLinkPointerResponse(link))
+}
+
+func (s *Server) handlePatchEmployerCompanySocialLink(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	var req updateCompanySocialLinkRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if req.Platform == nil && req.URL == nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "at least one field is required", nil)
+		return
+	}
+	linkURL, repoErr := parseOptionalURI(req.URL, "url")
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	link, repoErr := s.store.UpdateCompanySocialLink(user.ID, r.PathValue("companyId"), r.PathValue("linkId"), model.UpdateCompanySocialLinkInput{
+		Platform: req.Platform,
+		URL:      linkURL,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.companySocialLinkPointerResponse(link))
+}
+
+func (s *Server) handleDeleteEmployerCompanySocialLink(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if repoErr := s.store.DeleteCompanySocialLink(user.ID, r.PathValue("companyId"), r.PathValue("linkId")); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListEmployerCompanyMedia(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	items, repoErr := s.store.ListCompanyMedia(user.ID, r.PathValue("companyId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.companyMediaPointersResponse(items),
+	})
+}
+
+func (s *Server) handleCreateEmployerCompanyMedia(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	var req createCompanyMediaRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	sortOrder := 0
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+	}
+	media, repoErr := s.store.CreateCompanyMedia(user.ID, r.PathValue("companyId"), model.CreateCompanyMediaInput{
+		MediaFileID: req.MediaFileID,
+		Title:       req.Title,
+		SortOrder:   sortOrder,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.companyMediaPointerResponse(media))
+}
+
+func (s *Server) handlePatchEmployerCompanyMedia(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	var req updateCompanyMediaRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if req.Title == nil && req.SortOrder == nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "at least one field is required", nil)
+		return
+	}
+
+	media, repoErr := s.store.UpdateCompanyMedia(user.ID, r.PathValue("companyId"), r.PathValue("mediaId"), model.UpdateCompanyMediaInput{
+		Title:     req.Title,
+		SortOrder: req.SortOrder,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.companyMediaPointerResponse(media))
+}
+
+func (s *Server) handleDeleteEmployerCompanyMedia(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if repoErr := s.store.DeleteCompanyMedia(user.ID, r.PathValue("companyId"), r.PathValue("mediaId")); repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetEmployerApplicantProfile(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	view, repoErr := s.store.GetEmployerApplicantProfileView(user.ID, r.PathValue("userId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.applicantProfileViewResponse(view))
+}
+
 func (s *Server) handleListEmployerOpportunities(w http.ResponseWriter, r *http.Request) {
 	user, appErr := s.requireAccessUser(r)
 	if appErr != nil {
@@ -1065,9 +2203,930 @@ func (s *Server) handlePatchEmployerOpportunity(w http.ResponseWriter, r *http.R
 	httpx.WriteJSON(w, http.StatusOK, s.employerOpportunityDetailResponse(opportunity))
 }
 
+func (s *Server) handleActivateEmployerOpportunity(w http.ResponseWriter, r *http.Request) {
+	s.handleEmployerOpportunityLifecycleAction(w, r, model.OpportunityStatusActive)
+}
+
+func (s *Server) handleCloseEmployerOpportunity(w http.ResponseWriter, r *http.Request) {
+	s.handleEmployerOpportunityLifecycleAction(w, r, model.OpportunityStatusClosed)
+}
+
+func (s *Server) handleArchiveEmployerOpportunity(w http.ResponseWriter, r *http.Request) {
+	s.handleEmployerOpportunityLifecycleAction(w, r, model.OpportunityStatusArchived)
+}
+
+func (s *Server) handleEmployerOpportunityLifecycleAction(w http.ResponseWriter, r *http.Request, targetStatus string) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	opportunity, repoErr := s.store.UpdateOpportunity(user.ID, r.PathValue("opportunityId"), model.UpdateOpportunityInput{
+		Status: &targetStatus,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerOpportunityDetailResponse(opportunity))
+}
+
+func (s *Server) handleListOpportunityApplications(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	input, repoErr := buildListApplicationsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListOpportunityApplications(user.ID, r.PathValue("opportunityId"), input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.employerApplicationsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handlePatchApplicationStatus(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	var req updateApplicationStatusRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if req.Status == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "status is required", nil)
+		return
+	}
+
+	application, repoErr := s.store.UpdateApplicationStatus(user.ID, r.PathValue("applicationId"), model.UpdateApplicationStatusInput{
+		Status:  req.Status,
+		Comment: req.Comment,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerApplicationDetailResponse(application))
+}
+
+func (s *Server) handleListNotificationCampaigns(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	input, repoErr := buildListNotificationCampaignsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListNotificationCampaigns(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.notificationCampaignsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleCreateNotificationCampaign(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	var req createNotificationCampaignRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	input, repoErr := parseCreateNotificationCampaignInput(req)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	campaign, repoErr := s.store.CreateNotificationCampaign(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.notificationCampaignDetailResponse(campaign))
+}
+
+func (s *Server) handleGetNotificationCampaign(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	campaign, repoErr := s.store.GetNotificationCampaign(user.ID, r.PathValue("campaignId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.notificationCampaignDetailResponse(campaign))
+}
+
+func (s *Server) handlePatchNotificationCampaign(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	input, repoErr := parseUpdateNotificationCampaignInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	campaign, repoErr := s.store.UpdateNotificationCampaign(user.ID, r.PathValue("campaignId"), input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.notificationCampaignDetailResponse(campaign))
+}
+
+func (s *Server) handleSendNotificationCampaign(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	campaign, repoErr := s.store.SendNotificationCampaign(user.ID, r.PathValue("campaignId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.notificationCampaignDetailResponse(campaign))
+}
+
+func (s *Server) handleCancelNotificationCampaign(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	campaign, repoErr := s.store.CancelNotificationCampaign(user.ID, r.PathValue("campaignId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.notificationCampaignDetailResponse(campaign))
+}
+
+func (s *Server) handleCreateEmployerTag(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	var req createTagRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	tag, repoErr := s.store.CreateEmployerTag(user.ID, parseCreateTagInput(req, true))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.tagsResponse([]*model.Tag{tag})[0])
+}
+
+func (s *Server) handleListCompanyVerificationRequests(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	items, repoErr := s.store.ListCompanyVerificationRequests(user.ID, r.PathValue("companyId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.verificationRequestsResponse(items),
+	})
+}
+
+func (s *Server) handleCreateCompanyVerificationRequest(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleEmployer {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not an employer", nil)
+		return
+	}
+
+	var req createVerificationRequestRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	input, repoErr := parseCreateVerificationRequestInput(req)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	request, repoErr := s.store.CreateCompanyVerificationRequest(user.ID, r.PathValue("companyId"), input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.verificationRequestResponse(request))
+}
+
+func (s *Server) handleListCuratorVerificationRequests(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	input, repoErr := buildListVerificationRequestsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListCuratorVerificationRequests(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.verificationRequestsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleReviewVerificationRequest(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req reviewVerificationRequestRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	request, repoErr := s.store.ReviewVerificationRequest(user.ID, r.PathValue("verificationRequestId"), parseReviewVerificationRequestInput(req))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.verificationRequestResponse(request))
+}
+
+func (s *Server) handleListModerationCases(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	input, repoErr := buildListModerationCasesInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListModerationCases(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.moderationCasesResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleCreateModerationCase(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req createModerationCaseRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	item, repoErr := s.store.CreateModerationCase(user.ID, model.CreateModerationCaseInput{
+		TargetType: strings.TrimSpace(req.TargetType),
+		TargetID:   strings.TrimSpace(req.TargetID),
+		Reason:     strings.TrimSpace(req.Reason),
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.moderationCaseResponse(item))
+}
+
+func (s *Server) handlePatchModerationCase(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	input, repoErr := parseUpdateModerationCaseInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	item, repoErr := s.store.UpdateModerationCase(user.ID, r.PathValue("moderationCaseId"), input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.moderationCaseResponse(item))
+}
+
+func (s *Server) handleListCuratorTags(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	input, repoErr := buildListCuratorTagsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListCuratorTags(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.tagsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleCreateCuratorTag(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req createTagRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	tag, repoErr := s.store.CreateCuratorTag(user.ID, parseCreateTagInput(req, false))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.tagsResponse([]*model.Tag{tag})[0])
+}
+
+func (s *Server) handlePatchCuratorTag(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateTagRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	tag, repoErr := s.store.UpdateCuratorTag(user.ID, r.PathValue("tagId"), model.UpdateTagInput{
+		Name:     trimStringPtr(req.Name),
+		IsActive: req.IsActive,
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.tagsResponse([]*model.Tag{tag})[0])
+}
+
+func (s *Server) handleListCuratorUsers(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	input, repoErr := buildListCuratorUsersInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListCuratorUsers(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.moderatedUsersResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleGetCuratorUser(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	item, repoErr := s.store.GetCuratorUser(user.ID, r.PathValue("userId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.moderatedUserResponse(item))
+}
+
+func (s *Server) handlePatchCuratorUser(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateCuratorUserRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	item, repoErr := s.store.UpdateCuratorUser(user.ID, r.PathValue("userId"), model.UpdateCuratorUserInput{
+		DisplayName: trimStringPtr(req.DisplayName),
+		IsActive:    req.IsActive,
+		Reason:      strings.TrimSpace(req.Reason),
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.moderatedUserResponse(item))
+}
+
+func (s *Server) handleGetCuratorApplicant(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	item, repoErr := s.store.GetCuratorApplicant(user.ID, r.PathValue("userId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.curatorApplicantProfileViewResponse(item))
+}
+
+func (s *Server) handlePatchCuratorApplicant(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateCuratorApplicantRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	item, repoErr := s.store.UpdateCuratorApplicant(user.ID, r.PathValue("userId"), model.UpdateCuratorApplicantInput{
+		Profile: model.UpdateApplicantProfileInput{
+			FirstName:      trimStringPtr(req.FirstName),
+			LastName:       trimStringPtr(req.LastName),
+			MiddleName:     req.MiddleName,
+			UniversityName: req.UniversityName,
+			Faculty:        req.Faculty,
+			ProgramName:    req.ProgramName,
+			StudyYear:      req.StudyYear,
+			GraduationYear: req.GraduationYear,
+			City:           req.City,
+			About:          req.About,
+			ResumeMediaID:  trimStringPtr(req.ResumeMediaID),
+		},
+		Privacy: parseUpdateApplicantPrivacyInput(req.Privacy),
+		Reason:  strings.TrimSpace(req.Reason),
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.curatorApplicantProfileViewResponse(item))
+}
+
+func (s *Server) handleGetCuratorEmployer(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	item, repoErr := s.store.GetCuratorEmployer(user.ID, r.PathValue("userId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerProfileViewResponse(item))
+}
+
+func (s *Server) handlePatchCuratorEmployer(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateCuratorEmployerRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	item, repoErr := s.store.UpdateCuratorEmployer(user.ID, r.PathValue("userId"), model.UpdateCuratorEmployerInput{
+		Profile: model.UpdateEmployerProfileInput{
+			FullName: trimStringPtr(req.FullName),
+			JobTitle: req.JobTitle,
+			Phone:    req.Phone,
+		},
+		Reason: strings.TrimSpace(req.Reason),
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerProfileViewResponse(item))
+}
+
+func (s *Server) handleGetCuratorCompany(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	item, repoErr := s.store.GetCuratorCompany(user.ID, r.PathValue("companyId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerCompanyDetailResponse(item))
+}
+
+func (s *Server) handlePatchCuratorCompany(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateCuratorCompanyRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	websiteURL, repoErr := parseOptionalURI(req.WebsiteURL, "websiteUrl")
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+
+	item, repoErr := s.store.UpdateCuratorCompany(user.ID, r.PathValue("companyId"), model.UpdateCuratorCompanyInput{
+		Company: model.UpdateCompanyInput{
+			LegalName:              trimStringPtr(req.LegalName),
+			BrandName:              req.BrandName,
+			Slug:                   trimStringPtr(req.Slug),
+			INN:                    trimStringPtr(req.INN),
+			Description:            req.Description,
+			Industry:               req.Industry,
+			WebsiteURL:             websiteURL,
+			CorporateEmailDomain:   trimStringPtr(req.CorporateEmailDomain),
+			HeadquartersLocationID: trimStringPtr(req.HeadquartersLocationID),
+			LogoMediaID:            trimStringPtr(req.LogoMediaID),
+			BannerMediaID:          trimStringPtr(req.BannerMediaID),
+			HeadquartersLocation:   toLocationInput(req.HeadquartersLocation),
+		},
+		Reason: strings.TrimSpace(req.Reason),
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerCompanyDetailResponse(item))
+}
+
+func (s *Server) handleGetCuratorOpportunity(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	item, repoErr := s.store.GetCuratorOpportunity(user.ID, r.PathValue("opportunityId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerOpportunityDetailResponse(item))
+}
+
+func (s *Server) handlePatchCuratorOpportunity(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateCuratorOpportunityRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	input, repoErr := parseUpdateCuratorOpportunityInput(req)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	item, repoErr := s.store.UpdateCuratorOpportunity(user.ID, r.PathValue("opportunityId"), input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.employerOpportunityDetailResponse(item))
+}
+
+func (s *Server) handleListAdminCurators(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	input, repoErr := buildListAdminCuratorsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListAdminCurators(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": s.curatorAccountsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
+	})
+}
+
+func (s *Server) handleCreateAdminCurator(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req createCuratorRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+	if req.Email == "" || req.Password == "" || req.DisplayName == "" || req.FullName == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "required fields are missing", nil)
+		return
+	}
+	email, appErr := parseRequiredEmail(req.Email, "email")
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if utf8.RuneCountInString(req.Password) < 8 {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "password must be at least 8 characters", nil)
+		return
+	}
+
+	hash, err := authplatform.HashPassword(req.Password)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to hash password", nil)
+		return
+	}
+
+	item, repoErr := s.store.CreateAdminCurator(user.ID, model.CreateCuratorInput{
+		Email:       email,
+		Password:    req.Password,
+		DisplayName: req.DisplayName,
+		FullName:    req.FullName,
+		Reason:      strings.TrimSpace(req.Reason),
+	}, hash)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, s.curatorAccountResponse(item))
+}
+
+func (s *Server) handlePatchAdminCurator(w http.ResponseWriter, r *http.Request) {
+	user, appErr := s.requireAccessUser(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
+	if user.Role != model.UserRoleCurator {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", "current user is not a curator", nil)
+		return
+	}
+
+	var req updateCuratorAccountRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "validation_error", "invalid request body", nil)
+		return
+	}
+
+	item, repoErr := s.store.UpdateAdminCurator(user.ID, r.PathValue("userId"), model.UpdateCuratorAccountInput{
+		DisplayName: trimStringPtr(req.DisplayName),
+		FullName:    trimStringPtr(req.FullName),
+		IsActive:    req.IsActive,
+		Reason:      strings.TrimSpace(req.Reason),
+	})
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.curatorAccountResponse(item))
+}
+
 func (s *Server) handleListPublicCompanies(w http.ResponseWriter, r *http.Request) {
-	page := queryInt(r, "page", 1)
-	pageSize := queryInt(r, "pageSize", 20)
+	page, pageSize, appErr := parsePaginationParams(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
 	items, total := s.store.ListPublicCompanies(r.URL.Query().Get("q"), r.URL.Query().Get("industry"), r.URL.Query().Get("city"), page, pageSize)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"items": s.companiesSummaryResponse(items),
@@ -1146,8 +3205,11 @@ func (s *Server) handleSearchLocations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = user
-	page := queryInt(r, "page", 1)
-	pageSize := queryInt(r, "pageSize", 20)
+	page, pageSize, appErr := parsePaginationParams(r)
+	if appErr != nil {
+		s.writeAppError(w, appErr)
+		return
+	}
 	items, total, appErr := s.store.SearchLocations(r.URL.Query().Get("q"), page, pageSize)
 	if appErr != nil {
 		s.writeAppError(w, appErr)
@@ -1195,12 +3257,20 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		s.writeAppError(w, appErr)
 		return
 	}
-	_ = user
-	page := queryInt(r, "page", 1)
-	pageSize := queryInt(r, "pageSize", 20)
+
+	input, repoErr := buildListNotificationsInput(r)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	items, total, repoErr := s.store.ListNotifications(user.ID, input)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"items": []any{},
-		"meta":  paginationMeta(page, pageSize, 0),
+		"items": s.notificationsResponse(items),
+		"meta":  paginationMeta(input.Page, input.PageSize, total),
 	})
 }
 
@@ -1251,8 +3321,12 @@ func (s *Server) handleMarkAllNotificationsRead(w http.ResponseWriter, r *http.R
 		s.writeAppError(w, appErr)
 		return
 	}
-	_ = user
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"updatedCount": 0})
+	updatedCount, repoErr := s.store.MarkAllNotificationsRead(user.ID)
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"updatedCount": updatedCount})
 }
 
 func (s *Server) handleMarkNotificationRead(w http.ResponseWriter, r *http.Request) {
@@ -1261,18 +3335,12 @@ func (s *Server) handleMarkNotificationRead(w http.ResponseWriter, r *http.Reque
 		s.writeAppError(w, appErr)
 		return
 	}
-	_ = user
-	httpx.WriteError(w, http.StatusNotFound, "not_found", "notification not found", nil)
-}
-
-func (s *Server) handleNotImplemented(operation string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		httpx.WriteError(w, http.StatusNotImplemented, "not_implemented", "operation is not implemented yet", map[string]any{
-			"operationId": operation,
-			"path":        r.URL.Path,
-			"method":      r.Method,
-		})
+	notification, repoErr := s.store.MarkNotificationRead(user.ID, r.PathValue("notificationId"))
+	if repoErr != nil {
+		s.writeAppError(w, repoErr)
+		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, s.notificationResponse(notification))
 }
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
@@ -1341,6 +3409,11 @@ func (s *Server) requireRefreshUser(r *http.Request) (*model.User, *commonstore.
 	return user, nil
 }
 
+func (s *Server) maybeAccessUser(r *http.Request) *model.User {
+	user, _ := s.requireAccessUser(r)
+	return user
+}
+
 func (s *Server) writeAuthCookies(w http.ResponseWriter, user *model.User) {
 	access, _ := authplatform.IssueToken(s.cfg.TokenSecret, authplatform.Claims{
 		Subject:      user.ID,
@@ -1398,837 +3471,6 @@ func (s *Server) writeAppError(w http.ResponseWriter, appErr *commonstore.AppErr
 	httpx.WriteError(w, appErr.Status, appErr.Code, appErr.Message, appErr.Details)
 }
 
-func (s *Server) authUserResponse(user *model.User) map[string]any {
-	return map[string]any{
-		"user":                 s.currentUserResponse(user),
-		"accessTokenExpiresIn": s.cfg.DefaultAccessTokenTTL,
-	}
-}
-
-func (s *Server) currentUserResponse(user *model.User) map[string]any {
-	return map[string]any{
-		"id":              user.ID,
-		"email":           user.Email,
-		"displayName":     user.DisplayName,
-		"role":            user.Role,
-		"isActive":        user.IsActive,
-		"avatarMediaId":   nullableString(user.AvatarMediaID),
-		"emailVerifiedAt": nullableTime(user.EmailVerifiedAt),
-		"lastLoginAt":     nullableTime(user.LastLoginAt),
-		"createdAt":       timestamp(user.CreatedAt),
-		"updatedAt":       timestamp(user.UpdatedAt),
-		"curatorProfile":  nil,
-	}
-}
-
-func (s *Server) applicantProfileResponse(profile *model.ApplicantProfile) map[string]any {
-	return map[string]any{
-		"userId":         profile.UserID,
-		"firstName":      profile.FirstName,
-		"lastName":       profile.LastName,
-		"middleName":     nullableString(profile.MiddleName),
-		"universityName": nullableString(profile.UniversityName),
-		"faculty":        nullableString(profile.Faculty),
-		"programName":    nullableString(profile.ProgramName),
-		"studyYear":      nullableInt(profile.StudyYear),
-		"graduationYear": nullableInt(profile.GraduationYear),
-		"city":           nullableString(profile.City),
-		"about":          nullableString(profile.About),
-		"resumeMediaId":  nullableString(profile.ResumeMediaID),
-		"createdAt":      timestamp(profile.CreatedAt),
-		"updatedAt":      timestamp(profile.UpdatedAt),
-	}
-}
-
-func (s *Server) applicantPrivacyResponse(privacy *model.ApplicantPrivacySettings) map[string]any {
-	return map[string]any{
-		"applicantUserId":        privacy.ApplicantUserID,
-		"profileVisibility":      privacy.ProfileVisibility,
-		"resumeVisibility":       privacy.ResumeVisibility,
-		"applicationsVisibility": privacy.ApplicationsVisibility,
-		"contactsVisibility":     privacy.ContactsVisibility,
-		"showCareerInterests":    privacy.ShowCareerInterests,
-		"allowRecommendations":   privacy.AllowRecommendations,
-		"updatedAt":              timestamp(privacy.UpdatedAt),
-	}
-}
-
-func (s *Server) employerProfileResponse(profile *model.EmployerProfile) map[string]any {
-	return map[string]any{
-		"userId":    profile.UserID,
-		"fullName":  profile.FullName,
-		"jobTitle":  nullableString(profile.JobTitle),
-		"phone":     nullableString(profile.Phone),
-		"createdAt": timestamp(profile.CreatedAt),
-		"updatedAt": timestamp(profile.UpdatedAt),
-	}
-}
-
-func (s *Server) uiSettingsResponse(settings *model.UISettings) map[string]any {
-	return map[string]any{
-		"userId":        settings.UserID,
-		"settingsJson":  settings.SettingsJSON,
-		"schemaVersion": settings.SchemaVersion,
-		"updatedAt":     timestamp(settings.UpdatedAt),
-	}
-}
-
-func (s *Server) companyDetailResponse(company *model.Company) map[string]any {
-	body := s.companySummaryResponse(company)
-	body["bannerMediaId"] = nullableString(company.BannerMediaID)
-	body["socialLinks"] = []any{}
-	body["media"] = []any{}
-	return body
-}
-
-func (s *Server) employerCompanyDetailResponse(company *model.Company) map[string]any {
-	body := s.companyDetailResponse(company)
-	body["inn"] = nullableString(company.INN)
-	body["corporateEmailDomain"] = nullableString(company.CorporateEmailDomain)
-	body["headquartersLocationId"] = nullableString(company.HeadquartersLocationID)
-	body["createdByUserId"] = nullableString(company.CreatedByUserID)
-	body["verifiedAt"] = nullableTime(company.VerifiedAt)
-	body["verifiedByCuratorUserId"] = nullableString(company.VerifiedByCuratorUserID)
-	return body
-}
-
-func (s *Server) companySummaryResponse(company *model.Company) map[string]any {
-	if company == nil {
-		return map[string]any{
-			"id":                   nil,
-			"legalName":            nil,
-			"brandName":            nil,
-			"slug":                 nil,
-			"description":          nil,
-			"industry":             nil,
-			"websiteUrl":           nil,
-			"logoMediaId":          nil,
-			"verificationStatus":   nil,
-			"headquartersLocation": nil,
-			"createdAt":            nil,
-			"updatedAt":            nil,
-		}
-	}
-	return map[string]any{
-		"id":                   company.ID,
-		"legalName":            company.LegalName,
-		"brandName":            nullableString(company.BrandName),
-		"slug":                 company.Slug,
-		"description":          nullableString(company.Description),
-		"industry":             nullableString(company.Industry),
-		"websiteUrl":           nullableString(company.WebsiteURL),
-		"logoMediaId":          nullableString(company.LogoMediaID),
-		"verificationStatus":   company.VerificationStatus,
-		"headquartersLocation": s.nullableLocation(company.HeadquartersLocationID),
-		"createdAt":            timestamp(company.CreatedAt),
-		"updatedAt":            timestamp(company.UpdatedAt),
-	}
-}
-
-func (s *Server) membershipResponse(membership *model.CompanyMembership) map[string]any {
-	user, profile := s.store.GetEmployerSnapshot(membership.EmployerUserID)
-	company, _ := s.store.GetPublicCompanyByID(membership.CompanyID)
-	return map[string]any{
-		"id":                    membership.ID,
-		"companyId":             membership.CompanyID,
-		"employerUserId":        membership.EmployerUserID,
-		"employer":              s.employerPreviewResponse(user, profile),
-		"invitedByUserId":       nullableString(membership.InvitedByUserID),
-		"company":               s.companySummaryResponse(company),
-		"membershipStatus":      membership.Status,
-		"memberRole":            membership.MemberRole,
-		"isPrimaryContact":      membership.IsPrimaryContact,
-		"statusChangedByUserId": nullableString(membership.StatusChangedByUserID),
-		"statusComment":         nullableString(membership.StatusComment),
-		"statusUpdatedAt":       timestamp(membership.StatusUpdatedAt),
-		"approvedAt":            nullableTime(membership.ApprovedAt),
-		"updatedAt":             timestamp(membership.UpdatedAt),
-		"createdAt":             timestamp(membership.CreatedAt),
-	}
-}
-
-func (s *Server) employerPreviewResponse(user *model.User, profile *model.EmployerProfile) map[string]any {
-	if user == nil || profile == nil {
-		return map[string]any{
-			"userId":        nil,
-			"email":         nil,
-			"displayName":   nil,
-			"fullName":      nil,
-			"isActive":      false,
-			"avatarMediaId": nil,
-			"jobTitle":      nil,
-		}
-	}
-	return map[string]any{
-		"userId":        user.ID,
-		"email":         user.Email,
-		"displayName":   user.DisplayName,
-		"fullName":      profile.FullName,
-		"isActive":      user.IsActive,
-		"avatarMediaId": nullableString(user.AvatarMediaID),
-		"jobTitle":      nullableString(profile.JobTitle),
-	}
-}
-
-func (s *Server) publicOpportunityCatalogResponse(items []*model.Opportunity) []any {
-	response := make([]any, 0, len(items))
-	for _, opportunity := range items {
-		response = append(response, s.publicOpportunityCatalogItemResponse(opportunity))
-	}
-	return response
-}
-
-func (s *Server) employerOpportunityCatalogResponse(items []*model.Opportunity) []any {
-	response := make([]any, 0, len(items))
-	for _, opportunity := range items {
-		response = append(response, s.employerOpportunityCatalogItemResponse(opportunity))
-	}
-	return response
-}
-
-func (s *Server) publicOpportunityCatalogItemResponse(opportunity *model.Opportunity) map[string]any {
-	body := s.publicOpportunityFieldsResponse(opportunity)
-	body["vacancyDetails"] = s.opportunityVacancyPreviewResponse(opportunity.VacancyDetails)
-	body["mentorProgramDetails"] = s.opportunityMentorProgramPreviewResponse(opportunity.MentorProgramDetails)
-	body["eventDetails"] = s.opportunityEventPreviewResponse(opportunity.EventDetails)
-	return body
-}
-
-func (s *Server) employerOpportunityCatalogItemResponse(opportunity *model.Opportunity) map[string]any {
-	body := s.publicOpportunityCatalogItemResponse(opportunity)
-	body["moderationStatus"] = opportunity.ModerationStatus
-	body["stats"] = s.nullableOpportunityStatsResponse(opportunity.Stats)
-	return body
-}
-
-func (s *Server) publicOpportunityDetailResponse(opportunity *model.Opportunity) map[string]any {
-	body := s.publicOpportunityFieldsResponse(opportunity)
-	body["vacancyDetails"] = s.opportunityVacancyDetailResponse(opportunity.VacancyDetails)
-	body["mentorProgramDetails"] = s.opportunityMentorProgramDetailResponse(opportunity.MentorProgramDetails)
-	body["eventDetails"] = s.opportunityEventDetailResponse(opportunity.EventDetails)
-	body["description"] = opportunity.Description
-	body["contactEmail"] = nullableString(opportunity.ContactEmail)
-	body["contactPhone"] = nullableString(opportunity.ContactPhone)
-	body["media"] = s.opportunityMediaResponse(opportunity.Media)
-	body["links"] = s.opportunityLinksResponse(opportunity.Links)
-	return body
-}
-
-func (s *Server) employerOpportunityDetailResponse(opportunity *model.Opportunity) map[string]any {
-	body := s.publicOpportunityDetailResponse(opportunity)
-	body["moderationStatus"] = opportunity.ModerationStatus
-	body["stats"] = s.nullableOpportunityStatsResponse(opportunity.Stats)
-	return body
-}
-
-func (s *Server) publicOpportunityFieldsResponse(opportunity *model.Opportunity) map[string]any {
-	return map[string]any{
-		"id":                  opportunity.ID,
-		"company":             s.companySummaryResponse(opportunity.Company),
-		"title":               opportunity.Title,
-		"summary":             opportunity.Summary,
-		"slug":                opportunity.Slug,
-		"type":                opportunity.Type,
-		"status":              opportunity.Status,
-		"participationFormat": opportunity.ParticipationFormat,
-		"location":            s.nullableLocation(opportunity.LocationID),
-		"coverMediaId":        nullableString(opportunity.CoverMediaID),
-		"publishedAt":         nullableTime(opportunity.PublishedAt),
-		"expiresAt":           nullableTime(opportunity.ExpiresAt),
-		"tags":                s.tagsResponse(opportunity.Tags),
-		"createdAt":           timestamp(opportunity.CreatedAt),
-		"updatedAt":           timestamp(opportunity.UpdatedAt),
-	}
-}
-
-func (s *Server) opportunityVacancyPreviewResponse(details *model.OpportunityVacancyDetails) any {
-	if details == nil {
-		return nil
-	}
-	return map[string]any{
-		"employmentType":  details.EmploymentType,
-		"experienceLevel": details.ExperienceLevel,
-		"salaryFrom":      nullableInt(details.SalaryFrom),
-		"salaryTo":        nullableInt(details.SalaryTo),
-		"currency":        nullableString(details.Currency),
-	}
-}
-
-func (s *Server) opportunityVacancyDetailResponse(details *model.OpportunityVacancyDetails) any {
-	return s.opportunityVacancyPreviewResponse(details)
-}
-
-func (s *Server) opportunityMentorProgramPreviewResponse(details *model.OpportunityMentorProgramDetails) any {
-	if details == nil {
-		return nil
-	}
-	return map[string]any{
-		"startAt":    nullableTime(details.StartAt),
-		"endAt":      nullableTime(details.EndAt),
-		"seatsCount": nullableInt(details.SeatsCount),
-	}
-}
-
-func (s *Server) opportunityMentorProgramDetailResponse(details *model.OpportunityMentorProgramDetails) any {
-	if details == nil {
-		return nil
-	}
-	return map[string]any{
-		"startAt":            nullableTime(details.StartAt),
-		"endAt":              nullableTime(details.EndAt),
-		"seatsCount":         nullableInt(details.SeatsCount),
-		"mentorRequirements": nullableString(details.MentorRequirements),
-	}
-}
-
-func (s *Server) opportunityEventPreviewResponse(details *model.OpportunityEventDetails) any {
-	if details == nil {
-		return nil
-	}
-	return map[string]any{
-		"startAt":              timestamp(details.StartAt),
-		"endAt":                timestamp(details.EndAt),
-		"registrationDeadline": nullableTime(details.RegistrationDeadline),
-		"capacity":             nullableInt(details.Capacity),
-	}
-}
-
-func (s *Server) opportunityEventDetailResponse(details *model.OpportunityEventDetails) any {
-	if details == nil {
-		return nil
-	}
-	return map[string]any{
-		"startAt":              timestamp(details.StartAt),
-		"endAt":                timestamp(details.EndAt),
-		"registrationDeadline": nullableTime(details.RegistrationDeadline),
-		"capacity":             nullableInt(details.Capacity),
-		"venueNote":            nullableString(details.VenueNote),
-	}
-}
-
-func (s *Server) opportunityLinksResponse(items []model.OpportunityLink) []any {
-	response := make([]any, 0, len(items))
-	for _, link := range items {
-		response = append(response, map[string]any{
-			"id":            link.ID,
-			"opportunityId": link.OpportunityID,
-			"linkType":      link.LinkType,
-			"title":         link.Title,
-			"url":           link.URL,
-			"sortOrder":     link.SortOrder,
-		})
-	}
-	return response
-}
-
-func (s *Server) opportunityMediaResponse(items []model.OpportunityMedia) []any {
-	response := make([]any, 0, len(items))
-	for _, media := range items {
-		response = append(response, map[string]any{
-			"id":            media.ID,
-			"opportunityId": media.OpportunityID,
-			"mediaFileId":   media.MediaFileID,
-			"title":         nullableString(media.Title),
-			"sortOrder":     media.SortOrder,
-			"createdAt":     timestamp(media.CreatedAt),
-		})
-	}
-	return response
-}
-
-func (s *Server) nullableOpportunityStatsResponse(stats *model.OpportunityStats) any {
-	if stats == nil {
-		return nil
-	}
-	return map[string]any{
-		"viewsCount": stats.ViewsCount,
-		"updatedAt":  timestamp(stats.UpdatedAt),
-	}
-}
-
-func (s *Server) notificationPreferencesResponse(preferences *model.NotificationPreferences) map[string]any {
-	return map[string]any{
-		"userId":                   preferences.UserID,
-		"inAppEnabled":             preferences.InAppEnabled,
-		"emailEnabled":             preferences.EmailEnabled,
-		"recommendationEnabled":    preferences.RecommendationEnabled,
-		"applicationStatusEnabled": preferences.ApplicationStatusEnabled,
-		"employerMessagesEnabled":  preferences.EmployerMessagesEnabled,
-		"systemEnabled":            preferences.SystemEnabled,
-		"updatedAt":                timestamp(preferences.UpdatedAt),
-	}
-}
-
-func (s *Server) companiesSummaryResponse(items []*model.Company) []any {
-	response := make([]any, 0, len(items))
-	for _, company := range items {
-		response = append(response, s.companySummaryResponse(company))
-	}
-	return response
-}
-
-func (s *Server) tagsResponse(items []*model.Tag) []any {
-	response := make([]any, 0, len(items))
-	for _, tag := range items {
-		response = append(response, map[string]any{
-			"id":              tag.ID,
-			"name":            tag.Name,
-			"tagType":         tag.TagType,
-			"isSystem":        tag.IsSystem,
-			"isActive":        tag.IsActive,
-			"createdByUserId": nullableString(tag.CreatedByUserID),
-			"createdAt":       timestamp(tag.CreatedAt),
-		})
-	}
-	return response
-}
-
-func (s *Server) locationsResponse(items []*model.Location) []any {
-	response := make([]any, 0, len(items))
-	for _, location := range items {
-		response = append(response, s.locationResponse(location))
-	}
-	return response
-}
-
-func (s *Server) membershipsResponse(items []*model.CompanyMembership) []any {
-	response := make([]any, 0, len(items))
-	for _, membership := range items {
-		response = append(response, s.membershipResponse(membership))
-	}
-	return response
-}
-
-func (s *Server) nullableLocation(locationID *string) any {
-	location := s.store.GetLocationByID(locationID)
-	if location == nil {
-		return nil
-	}
-	return s.locationResponse(location)
-}
-
-func (s *Server) locationResponse(location *model.Location) map[string]any {
-	return map[string]any{
-		"id":          location.ID,
-		"precision":   location.Precision,
-		"country":     location.Country,
-		"region":      nullableString(location.Region),
-		"city":        location.City,
-		"addressLine": nullableString(location.AddressLine),
-		"postalCode":  nullableString(location.PostalCode),
-		"placeName":   nullableString(location.PlaceName),
-		"latitude":    nullableFloat(location.Latitude),
-		"longitude":   nullableFloat(location.Longitude),
-		"createdAt":   timestamp(location.CreatedAt),
-	}
-}
-
-func buildListEmployerOpportunitiesInput(r *http.Request) (model.ListEmployerOpportunitiesInput, *commonstore.AppError) {
-	input := model.ListEmployerOpportunitiesInput{
-		CompanyID:        r.URL.Query().Get("companyId"),
-		Status:           r.URL.Query().Get("status"),
-		ModerationStatus: r.URL.Query().Get("moderationStatus"),
-		Page:             queryInt(r, "page", 1),
-		PageSize:         queryInt(r, "pageSize", 20),
-	}
-	if input.Status != "" && !containsString([]string{
-		model.OpportunityStatusDraft,
-		model.OpportunityStatusPlanned,
-		model.OpportunityStatusActive,
-		model.OpportunityStatusClosed,
-		model.OpportunityStatusRejected,
-		model.OpportunityStatusArchived,
-	}, input.Status) {
-		return model.ListEmployerOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid opportunity status"}
-	}
-	if input.ModerationStatus != "" && !containsString([]string{
-		model.ModerationStatusPending,
-		model.ModerationStatusApproved,
-		model.ModerationStatusRejected,
-		model.ModerationStatusNeedsChanges,
-	}, input.ModerationStatus) {
-		return model.ListEmployerOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid moderation status"}
-	}
-	return input, nil
-}
-
-func buildListPublicOpportunitiesInput(r *http.Request) (model.ListPublicOpportunitiesInput, *commonstore.AppError) {
-	input := model.ListPublicOpportunitiesInput{
-		Page:                queryInt(r, "page", 1),
-		PageSize:            queryInt(r, "pageSize", 20),
-		Q:                   r.URL.Query().Get("q"),
-		Type:                r.URL.Query().Get("type"),
-		ParticipationFormat: r.URL.Query().Get("participationFormat"),
-		CompanyID:           r.URL.Query().Get("companyId"),
-		City:                r.URL.Query().Get("city"),
-		TagIDs:              r.URL.Query()["tagIds"],
-		Sort:                r.URL.Query().Get("sort"),
-		View:                r.URL.Query().Get("view"),
-		BBox:                r.URL.Query().Get("bbox"),
-	}
-	if input.View == "" {
-		input.View = "list"
-	}
-	if !containsString([]string{"list", "map"}, input.View) {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid view parameter"}
-	}
-	if input.Type != "" && !containsString([]string{
-		model.OpportunityTypeInternship,
-		model.OpportunityTypeVacancy,
-		model.OpportunityTypeMentorProgram,
-		model.OpportunityTypeEvent,
-	}, input.Type) {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid opportunity type"}
-	}
-	if input.ParticipationFormat != "" && !containsString([]string{"offline", "hybrid", "remote", "online"}, input.ParticipationFormat) {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid participation format"}
-	}
-	if input.Sort != "" && !containsString([]string{"published_at_desc", "published_at_asc", "salary_desc", "salary_asc", "starts_at_asc"}, input.Sort) {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid sort parameter"}
-	}
-
-	var err error
-	input.SalaryFrom, err = optionalIntQuery(r, "salaryFrom")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid salaryFrom parameter"}
-	}
-	input.SalaryTo, err = optionalIntQuery(r, "salaryTo")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid salaryTo parameter"}
-	}
-	input.StartsAfter, err = optionalTimeQuery(r, "startsAfter")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid startsAfter parameter"}
-	}
-	input.ExpiresAfter, err = optionalTimeQuery(r, "expiresAfter")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid expiresAfter parameter"}
-	}
-	input.Lat, err = optionalFloatQuery(r, "lat")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid lat parameter"}
-	}
-	input.Lng, err = optionalFloatQuery(r, "lng")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid lng parameter"}
-	}
-	input.RadiusKm, err = optionalFloatQuery(r, "radiusKm")
-	if err != nil {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid radiusKm parameter"}
-	}
-
-	input.EmploymentType = r.URL.Query().Get("employmentType")
-	if input.EmploymentType != "" && !containsString([]string{"full_time", "part_time", "project", "contract"}, input.EmploymentType) {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid employmentType parameter"}
-	}
-	input.ExperienceLevel = r.URL.Query().Get("experienceLevel")
-	if input.ExperienceLevel != "" && !containsString([]string{"trainee", "junior", "middle", "senior"}, input.ExperienceLevel) {
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid experienceLevel parameter"}
-	}
-
-	if input.BBox != "" || input.Lat != nil || input.Lng != nil || input.RadiusKm != nil {
-		if input.View != "map" {
-			return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "map filters require view=map"}
-		}
-		if input.BBox != "" && (input.Lat != nil || input.Lng != nil || input.RadiusKm != nil) {
-			return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "bbox cannot be combined with center and radius filters"}
-		}
-		if (input.Lat == nil) != (input.Lng == nil) {
-			return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "lat and lng must be provided together"}
-		}
-		if (input.Lat != nil || input.Lng != nil) && input.RadiusKm == nil {
-			return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "radiusKm is required when lat and lng are provided"}
-		}
-		if input.City != "" {
-			return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "city cannot be combined with map geo filters"}
-		}
-		return model.ListPublicOpportunitiesInput{}, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "map geo filters are not implemented yet"}
-	}
-
-	return input, nil
-}
-
-func parseCreateOpportunityInput(req createOpportunityRequest) (model.CreateOpportunityInput, *commonstore.AppError) {
-	publishedAt, appErr := parseOptionalRFC3339(req.PublishedAt, "publishedAt")
-	if appErr != nil {
-		return model.CreateOpportunityInput{}, appErr
-	}
-	expiresAt, appErr := parseOptionalRFC3339(req.ExpiresAt, "expiresAt")
-	if appErr != nil {
-		return model.CreateOpportunityInput{}, appErr
-	}
-	vacancyDetails := toOpportunityVacancyDetails(req.VacancyDetails)
-	mentorDetails, appErr := toOpportunityMentorProgramDetails(req.MentorProgramDetails)
-	if appErr != nil {
-		return model.CreateOpportunityInput{}, appErr
-	}
-	eventDetails, appErr := toOpportunityEventDetails(req.EventDetails)
-	if appErr != nil {
-		return model.CreateOpportunityInput{}, appErr
-	}
-	return model.CreateOpportunityInput{
-		CompanyID:            req.CompanyID,
-		Title:                req.Title,
-		Summary:              req.Summary,
-		Slug:                 req.Slug,
-		Description:          req.Description,
-		Type:                 req.Type,
-		ParticipationFormat:  req.ParticipationFormat,
-		LocationID:           req.LocationID,
-		ContactEmail:         req.ContactEmail,
-		ContactPhone:         req.ContactPhone,
-		CoverMediaID:         req.CoverMediaID,
-		PublishedAt:          publishedAt,
-		ExpiresAt:            expiresAt,
-		TagIDs:               req.TagIDs,
-		VacancyDetails:       vacancyDetails,
-		MentorProgramDetails: mentorDetails,
-		EventDetails:         eventDetails,
-		Links:                toOpportunityLinkInputs(req.Links),
-		Media:                toOpportunityMediaInputs(req.Media),
-		Location:             toLocationInput(req.Location),
-	}, nil
-}
-
-func parseUpdateOpportunityInput(req updateOpportunityRequest) (model.UpdateOpportunityInput, *commonstore.AppError) {
-	publishedAt, appErr := parseOptionalRFC3339(req.PublishedAt, "publishedAt")
-	if appErr != nil {
-		return model.UpdateOpportunityInput{}, appErr
-	}
-	expiresAt, appErr := parseOptionalRFC3339(req.ExpiresAt, "expiresAt")
-	if appErr != nil {
-		return model.UpdateOpportunityInput{}, appErr
-	}
-	vacancyDetails := toOpportunityVacancyDetails(req.VacancyDetails)
-	mentorDetails, appErr := toOpportunityMentorProgramDetails(req.MentorProgramDetails)
-	if appErr != nil {
-		return model.UpdateOpportunityInput{}, appErr
-	}
-	eventDetails, appErr := toOpportunityEventDetails(req.EventDetails)
-	if appErr != nil {
-		return model.UpdateOpportunityInput{}, appErr
-	}
-
-	input := model.UpdateOpportunityInput{
-		Title:                req.Title,
-		Summary:              req.Summary,
-		Slug:                 req.Slug,
-		Description:          req.Description,
-		Status:               req.Status,
-		ParticipationFormat:  req.ParticipationFormat,
-		LocationID:           req.LocationID,
-		ContactEmail:         req.ContactEmail,
-		ContactPhone:         req.ContactPhone,
-		CoverMediaID:         req.CoverMediaID,
-		PublishedAt:          publishedAt,
-		ExpiresAt:            expiresAt,
-		VacancyDetails:       vacancyDetails,
-		MentorProgramDetails: mentorDetails,
-		EventDetails:         eventDetails,
-		Location:             toLocationInput(req.Location),
-	}
-	if req.TagIDs != nil {
-		input.TagIDs = *req.TagIDs
-		input.ReplaceTagIDs = true
-	}
-	if req.Links != nil {
-		input.Links = toOpportunityLinkInputs(*req.Links)
-		input.ReplaceLinks = true
-	}
-	if req.Media != nil {
-		input.Media = toOpportunityMediaInputs(*req.Media)
-		input.ReplaceMedia = true
-	}
-	return input, nil
-}
-
-func toOpportunityVacancyDetails(req *opportunityVacancyDetailsRequest) *model.OpportunityVacancyDetails {
-	if req == nil {
-		return nil
-	}
-	return &model.OpportunityVacancyDetails{
-		EmploymentType:  req.EmploymentType,
-		ExperienceLevel: req.ExperienceLevel,
-		SalaryFrom:      req.SalaryFrom,
-		SalaryTo:        req.SalaryTo,
-		Currency:        req.Currency,
-	}
-}
-
-func toOpportunityMentorProgramDetails(req *opportunityMentorProgramDetailsRequest) (*model.OpportunityMentorProgramDetails, *commonstore.AppError) {
-	if req == nil {
-		return nil, nil
-	}
-	startAt, appErr := parseOptionalRFC3339(req.StartAt, "mentorProgramDetails.startAt")
-	if appErr != nil {
-		return nil, appErr
-	}
-	endAt, appErr := parseOptionalRFC3339(req.EndAt, "mentorProgramDetails.endAt")
-	if appErr != nil {
-		return nil, appErr
-	}
-	return &model.OpportunityMentorProgramDetails{
-		StartAt:            startAt,
-		EndAt:              endAt,
-		SeatsCount:         req.SeatsCount,
-		MentorRequirements: req.MentorRequirements,
-	}, nil
-}
-
-func toOpportunityEventDetails(req *opportunityEventDetailsRequest) (*model.OpportunityEventDetails, *commonstore.AppError) {
-	if req == nil {
-		return nil, nil
-	}
-	startAt, err := time.Parse(time.RFC3339, req.StartAt)
-	if err != nil {
-		return nil, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid eventDetails.startAt"}
-	}
-	endAt, err := time.Parse(time.RFC3339, req.EndAt)
-	if err != nil {
-		return nil, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid eventDetails.endAt"}
-	}
-	registrationDeadline, appErr := parseOptionalRFC3339(req.RegistrationDeadline, "eventDetails.registrationDeadline")
-	if appErr != nil {
-		return nil, appErr
-	}
-	return &model.OpportunityEventDetails{
-		StartAt:              startAt.UTC(),
-		EndAt:                endAt.UTC(),
-		RegistrationDeadline: registrationDeadline,
-		Capacity:             req.Capacity,
-		VenueNote:            req.VenueNote,
-	}, nil
-}
-
-func toOpportunityLinkInputs(items []opportunityLinkInputRequest) []model.OpportunityLinkInput {
-	response := make([]model.OpportunityLinkInput, 0, len(items))
-	for _, item := range items {
-		sortOrder := 0
-		if item.SortOrder != nil {
-			sortOrder = *item.SortOrder
-		}
-		response = append(response, model.OpportunityLinkInput{
-			LinkType:  item.LinkType,
-			Title:     item.Title,
-			URL:       item.URL,
-			SortOrder: sortOrder,
-		})
-	}
-	return response
-}
-
-func toOpportunityMediaInputs(items []opportunityMediaInputRequest) []model.OpportunityMediaInput {
-	response := make([]model.OpportunityMediaInput, 0, len(items))
-	for _, item := range items {
-		sortOrder := 0
-		if item.SortOrder != nil {
-			sortOrder = *item.SortOrder
-		}
-		response = append(response, model.OpportunityMediaInput{
-			MediaFileID: item.MediaFileID,
-			Title:       item.Title,
-			SortOrder:   sortOrder,
-		})
-	}
-	return response
-}
-
-func optionalIntQuery(r *http.Request, name string) (*int, error) {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return nil, nil
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		return nil, err
-	}
-	return &value, nil
-}
-
-func optionalFloatQuery(r *http.Request, name string) (*float64, error) {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return nil, nil
-	}
-	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return nil, err
-	}
-	return &value, nil
-}
-
-func optionalTimeQuery(r *http.Request, name string) (*time.Time, error) {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return nil, nil
-	}
-	value, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return nil, err
-	}
-	value = value.UTC()
-	return &value, nil
-}
-
-func parseOptionalRFC3339(value *string, field string) (*time.Time, *commonstore.AppError) {
-	if value == nil {
-		return nil, nil
-	}
-	parsed, err := time.Parse(time.RFC3339, *value)
-	if err != nil {
-		return nil, &commonstore.AppError{Status: http.StatusUnprocessableEntity, Code: "validation_error", Message: "invalid " + field}
-	}
-	parsed = parsed.UTC()
-	return &parsed, nil
-}
-
-func containsString(items []string, value string) bool {
-	for _, item := range items {
-		if item == value {
-			return true
-		}
-	}
-	return false
-}
-
-func queryInt(r *http.Request, name string, fallback int) int {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value < 1 {
-		return fallback
-	}
-	return value
-}
-
-func paginationMeta(page, pageSize, totalItems int) map[string]any {
-	totalPages := 0
-	if totalItems > 0 {
-		totalPages = int(math.Ceil(float64(totalItems) / float64(pageSize)))
-	}
-	return map[string]any{
-		"page":       page,
-		"pageSize":   pageSize,
-		"totalItems": totalItems,
-		"totalPages": totalPages,
-	}
-}
-
-func decodeOptionalJSON(r *http.Request, dst any) error {
-	defer r.Body.Close()
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return err
-	}
-	return nil
-}
-
 func nullableString(value *string) any {
 	if value == nil {
 		return nil
@@ -2237,6 +3479,13 @@ func nullableString(value *string) any {
 }
 
 func nullableInt(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func nullableInt64(value *int64) any {
 	if value == nil {
 		return nil
 	}

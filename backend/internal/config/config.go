@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -26,6 +27,16 @@ type Config struct {
 	DatabaseMinConns        int32
 	DatabaseMaxConnLifetime time.Duration
 	DatabaseMaxConnIdleTime time.Duration
+	ObjectStorageEndpoint   string
+	ObjectStoragePublicURL  string
+	ObjectStoragePublicSSL  bool
+	ObjectStorageAccessKey  string
+	ObjectStorageSecretKey  string
+	ObjectStorageBucket     string
+	ObjectStorageUseSSL     bool
+	ObjectStorageRegion     string
+	UploadURLTTL            time.Duration
+	DownloadURLTTL          time.Duration
 }
 
 func Load() Config {
@@ -52,7 +63,41 @@ func Load() Config {
 		DatabaseMinConns:        envInt32("TRAMPLIN_DATABASE_MIN_CONNS", 0),
 		DatabaseMaxConnLifetime: envDuration("TRAMPLIN_DATABASE_MAX_CONN_LIFETIME", time.Hour),
 		DatabaseMaxConnIdleTime: envDuration("TRAMPLIN_DATABASE_MAX_CONN_IDLE_TIME", 15*time.Minute),
+		ObjectStorageEndpoint:   env("TRAMPLIN_OBJECT_STORAGE_ENDPOINT", ""),
+		ObjectStoragePublicURL:  env("TRAMPLIN_OBJECT_STORAGE_PUBLIC_URL", ""),
+		ObjectStoragePublicSSL:  env("TRAMPLIN_OBJECT_STORAGE_PUBLIC_USE_SSL", "") == "true",
+		ObjectStorageAccessKey:  env("TRAMPLIN_OBJECT_STORAGE_ACCESS_KEY", ""),
+		ObjectStorageSecretKey:  env("TRAMPLIN_OBJECT_STORAGE_SECRET_KEY", ""),
+		ObjectStorageBucket:     env("TRAMPLIN_OBJECT_STORAGE_BUCKET", ""),
+		ObjectStorageUseSSL:     env("TRAMPLIN_OBJECT_STORAGE_USE_SSL", "") == "true",
+		ObjectStorageRegion:     env("TRAMPLIN_OBJECT_STORAGE_REGION", ""),
+		UploadURLTTL:            envDuration("TRAMPLIN_UPLOAD_URL_TTL", 15*time.Minute),
+		DownloadURLTTL:          envDuration("TRAMPLIN_DOWNLOAD_URL_TTL", 15*time.Minute),
 	}
+}
+
+func (c Config) HasAnyObjectStorageConfig() bool {
+	return c.ObjectStorageEndpoint != "" ||
+		c.ObjectStorageAccessKey != "" ||
+		c.ObjectStorageSecretKey != "" ||
+		c.ObjectStorageBucket != ""
+}
+
+func (c Config) HasObjectStorageConfig() bool {
+	return c.ObjectStorageEndpoint != "" &&
+		c.ObjectStorageAccessKey != "" &&
+		c.ObjectStorageSecretKey != "" &&
+		c.ObjectStorageBucket != ""
+}
+
+func (c Config) ValidateObjectStorage() error {
+	if !c.HasAnyObjectStorageConfig() {
+		return nil
+	}
+	if c.HasObjectStorageConfig() {
+		return nil
+	}
+	return fmt.Errorf("object storage configuration is incomplete")
 }
 
 func env(key, fallback string) string {

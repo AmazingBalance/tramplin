@@ -160,6 +160,17 @@ func (s *Store) GetUserByID(userID string) (*model.User, *AppError) {
 	return cloneUser(user), nil
 }
 
+func (s *Store) GetCurrentCuratorProfile(userID string) (*model.CurrentCuratorProfile, *AppError) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	user, ok := s.users[userID]
+	if !ok || user.Role != model.UserRoleCurator || !user.IsActive {
+		return nil, appErr(500, "internal_error", "failed to load curator profile", nil)
+	}
+	return &model.CurrentCuratorProfile{IsAdmin: false}, nil
+}
+
 func (s *Store) TouchLastLogin(userID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

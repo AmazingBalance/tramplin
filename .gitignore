@@ -1,3 +1,4 @@
 backend/.env
 backend/.local/
 node_modules
+.codex
