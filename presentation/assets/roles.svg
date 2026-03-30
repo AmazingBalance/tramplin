@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fbf7ef"/>
+      <stop offset="100%" stop-color="#f1e7d8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#1f2430" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .title { font: 700 36px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #182133; }
+      .subtitle { font: 500 20px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #5f6674; }
+      .box-title { font: 700 28px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #182133; }
+      .label { font: 500 19px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #425062; }
+      .small { font: 500 17px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #5f6674; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" rx="36" fill="url(#bg)"/>
+
+  <text x="90" y="88" class="title">Ролевой контур платформы</text>
+  <text x="90" y="126" class="subtitle">Публичный каталог остаётся точкой входа, а личные кабинеты формируют три независимых рабочих сценария.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="120" y="220" width="290" height="420" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="455" y="220" width="290" height="420" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="790" y="220" width="290" height="420" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="1125" y="220" width="330" height="420" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+  </g>
+
+  <rect x="145" y="245" width="112" height="40" rx="20" fill="#e4eef5"/>
+  <text x="171" y="272" class="small" fill="#356b8c">ПУБЛИЧНО</text>
+  <text x="145" y="326" class="box-title">Гость</text>
+  <text x="145" y="372" class="label">• карта возможностей</text>
+  <text x="145" y="408" class="label">• список и фильтры</text>
+  <text x="145" y="444" class="label">• карточки компаний</text>
+  <text x="145" y="480" class="label">• избранное в браузере</text>
+  <text x="145" y="548" class="small">Главная ценность — быстрый вход</text>
+  <text x="145" y="576" class="small">в платформу без регистрации.</text>
+
+  <rect x="480" y="245" width="138" height="40" rx="20" fill="#e7f1ea"/>
+  <text x="510" y="272" class="small" fill="#2f6a50">СОИСКАТЕЛЬ</text>
+  <text x="480" y="326" class="box-title">Кабинет соискателя</text>
+  <text x="480" y="372" class="label">• профиль и приватность</text>
+  <text x="480" y="408" class="label">• отклики и статусы</text>
+  <text x="480" y="444" class="label">• избранные компании</text>
+  <text x="480" y="480" class="label">• контакты и рекомендации</text>
+  <text x="480" y="548" class="small">Из поиска пользователь переходит</text>
+  <text x="480" y="576" class="small">к карьерной траектории.</text>
+
+  <rect x="815" y="245" width="160" height="40" rx="20" fill="#f3e8df"/>
+  <text x="846" y="272" class="small" fill="#b35c1e">РАБОТОДАТЕЛЬ</text>
+  <text x="815" y="326" class="box-title">Кабинет работодателя</text>
+  <text x="815" y="372" class="label">• профиль компании</text>
+  <text x="815" y="408" class="label">• публикация возможностей</text>
+  <text x="815" y="444" class="label">• управление откликами</text>
+  <text x="815" y="480" class="label">• кампании уведомлений</text>
+  <text x="815" y="548" class="small">Работодатель управляет не только</text>
+  <text x="815" y="576" class="small">контентом, но и коммуникацией.</text>
+
+  <rect x="1150" y="245" width="126" height="40" rx="20" fill="#f2e4ea"/>
+  <text x="1180" y="272" class="small" fill="#7c384c">КУРАТОР</text>
+  <text x="1150" y="326" class="box-title">Куратор и администратор</text>
+  <text x="1150" y="372" class="label">• верификация компаний</text>
+  <text x="1150" y="408" class="label">• модерация контента</text>
+  <text x="1150" y="444" class="label">• исправление профилей</text>
+  <text x="1150" y="480" class="label">• управление кураторами</text>
+  <text x="1150" y="548" class="small">Качество данных и доверие к платформе</text>
+  <text x="1150" y="576" class="small">обеспечиваются отдельным контуром.</text>
+
+  <path d="M410 428 C435 428, 435 428, 455 428" fill="none" stroke="#356b8c" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="447,415 470,428 447,441" fill="#356b8c"/>
+
+  <path d="M745 428 C770 428, 770 428, 790 428" fill="none" stroke="#b35c1e" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="782,415 805,428 782,441" fill="#b35c1e"/>
+
+  <path d="M1080 428 C1104 428, 1104 428, 1125 428" fill="none" stroke="#7c384c" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="1117,415 1140,428 1117,441" fill="#7c384c"/>
+
+  <text x="418" y="404" class="small" fill="#356b8c">регистрация</text>
+  <text x="753" y="404" class="small" fill="#b35c1e">верификация</text>
+  <text x="1089" y="404" class="small" fill="#7c384c">контроль качества</text>
+
+  <rect x="120" y="700" width="1335" height="106" rx="28" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+  <text x="158" y="748" class="box-title" font-size="24">Продуктовая логика</text>
+  <text x="158" y="786" class="label">Платформа строится вокруг одной публичной витрины и трёх ролевых кабинетов. Это делает систему понятной для пользователя и одновременно позволяет жюри быстро проверить полноту сценариев по ТЗ.</text>
+</svg>

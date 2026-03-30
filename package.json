@@ -1,0 +1,19 @@
+{
+  "name": "tramplin",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "openapi:lint": "redocly lint TramplinAPI.yaml",
+    "openapi:postman": "node scripts/generate-postman-collection.js",
+    "presentation:pdf": "npx @marp-team/marp-cli presentation/slides.md --allow-local-files --pdf -o presentation/tramplin-presentation.pdf"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@redocly/cli": "^2.25.2"
+  }
+}

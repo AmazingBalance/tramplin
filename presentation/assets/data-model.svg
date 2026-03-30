@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 960">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fbf7ef"/>
+      <stop offset="100%" stop-color="#f1e7d8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#1f2430" flood-opacity="0.09"/>
+    </filter>
+    <style>
+      .title { font: 700 34px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #182133; }
+      .subtitle { font: 500 18px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #5f6674; }
+      .node-title { font: 700 24px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #182133; }
+      .line { font: 500 17px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #425062; }
+      .small { font: 500 15px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #5f6674; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="960" rx="36" fill="url(#bg)"/>
+  <text x="76" y="78" class="title">Укрупнённая схема данных</text>
+  <text x="76" y="112" class="subtitle">Схема ориентирована не на отдельные таблицы, а на продуктовые агрегаты и связи между ними.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="84" y="180" width="250" height="190" rx="26" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="84" y="442" width="250" height="186" rx="26" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="388" y="110" width="294" height="228" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="388" y="406" width="294" height="230" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="742" y="100" width="360" height="270" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="742" y="430" width="360" height="220" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="1160" y="164" width="316" height="190" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="1160" y="426" width="316" height="218" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+  </g>
+
+  <rect x="104" y="202" width="82" height="32" rx="16" fill="#356b8c"/>
+  <text x="127" y="224" class="small" fill="#fff">CORE</text>
+  <text x="108" y="278" class="node-title">users</text>
+  <text x="108" y="316" class="line">• роль</text>
+  <text x="108" y="346" class="line">• email / password</text>
+  <text x="108" y="376" class="line">• токены и активность</text>
+
+  <rect x="104" y="464" width="106" height="32" rx="16" fill="#7c384c"/>
+  <text x="126" y="486" class="small" fill="#fff">SETTINGS</text>
+  <text x="108" y="540" class="node-title">user_ui_settings</text>
+  <text x="108" y="578" class="line">• настройки интерфейса</text>
+  <text x="108" y="608" class="line">• версия схемы</text>
+
+  <rect x="410" y="132" width="120" height="32" rx="16" fill="#2f6a50"/>
+  <text x="437" y="154" class="small" fill="#fff">APPLICANT</text>
+  <text x="414" y="212" class="node-title">applicant_profiles</text>
+  <text x="414" y="246" class="line">• ФИО, вуз, курс, выпуск</text>
+  <text x="414" y="276" class="line">• резюме и город</text>
+  <text x="414" y="320" class="line">+ privacy_settings</text>
+  <text x="414" y="350" class="line">+ social_links</text>
+
+  <rect x="410" y="428" width="132" height="32" rx="16" fill="#b35c1e"/>
+  <text x="434" y="450" class="small" fill="#fff">EMPLOYER</text>
+  <text x="414" y="510" class="node-title">employer_profiles</text>
+  <text x="414" y="544" class="line">• ФИО, должность, телефон</text>
+  <text x="414" y="590" class="line">companies</text>
+  <text x="414" y="620" class="line">company_memberships</text>
+
+  <rect x="764" y="122" width="132" height="32" rx="16" fill="#b35c1e"/>
+  <text x="790" y="144" class="small" fill="#fff">BUSINESS</text>
+  <text x="768" y="204" class="node-title">companies</text>
+  <text x="768" y="238" class="line">• профиль компании</text>
+  <text x="768" y="268" class="line">• логотип, баннер, соцсети</text>
+  <text x="768" y="298" class="line">• verification_status</text>
+  <text x="768" y="342" class="line">verification_requests</text>
+  <text x="768" y="372" class="line">company_media</text>
+
+  <rect x="764" y="452" width="158" height="32" rx="16" fill="#356b8c"/>
+  <text x="789" y="474" class="small" fill="#fff">OPPORTUNITIES</text>
+  <text x="768" y="534" class="node-title">opportunities</text>
+  <text x="768" y="568" class="line">• тип, формат, статус</text>
+  <text x="768" y="598" class="line">• location, tags, links, media</text>
+  <text x="768" y="628" class="line">• отдельные detail-таблицы</text>
+
+  <rect x="1182" y="186" width="128" height="32" rx="16" fill="#7c384c"/>
+  <text x="1214" y="208" class="small" fill="#fff">PROCESS</text>
+  <text x="1186" y="264" class="node-title">applications</text>
+  <text x="1186" y="298" class="line">• отклик на opportunity</text>
+  <text x="1186" y="328" class="line">• status_history</text>
+
+  <rect x="1182" y="448" width="140" height="32" rx="16" fill="#2f6a50"/>
+  <text x="1212" y="470" class="small" fill="#fff">ENGAGEMENT</text>
+  <text x="1186" y="526" class="node-title">connections</text>
+  <text x="1186" y="560" class="line">saved_companies</text>
+  <text x="1186" y="590" class="line">saved_opportunities</text>
+  <text x="1186" y="620" class="line">recommendations</text>
+
+  <rect x="1182" y="690" width="154" height="32" rx="16" fill="#356b8c"/>
+  <text x="1209" y="712" class="small" fill="#fff">SERVICE LAYER</text>
+  <rect x="1160" y="736" width="316" height="124" rx="30" fill="#ffffff" stroke="#ddcfbe" stroke-width="3" filter="url(#shadow)"/>
+  <text x="1186" y="792" class="node-title">media / tags / notifications</text>
+  <text x="1186" y="826" class="line">Обслуживающие домены, которые связывают роли, контент, коммуникацию и доступ к файлам.</text>
+
+  <path d="M334 274 C360 274, 366 226, 388 226" fill="none" stroke="#356b8c" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="378,212 401,224 380,239" fill="#356b8c"/>
+
+  <path d="M334 296 C362 296, 368 520, 388 520" fill="none" stroke="#7c384c" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="378,508 401,520 380,534" fill="#7c384c"/>
+
+  <path d="M682 238 C708 238, 716 238, 742 238" fill="none" stroke="#2f6a50" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="732,226 755,238 732,252" fill="#2f6a50"/>
+
+  <path d="M682 532 C708 532, 716 532, 742 532" fill="none" stroke="#b35c1e" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="732,520 755,532 732,546" fill="#b35c1e"/>
+
+  <path d="M1102 232 C1128 232, 1138 264, 1160 264" fill="none" stroke="#7c384c" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="1149,251 1171,264 1149,277" fill="#7c384c"/>
+
+  <path d="M1102 552 C1128 552, 1138 526, 1160 526" fill="none" stroke="#2f6a50" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="1149,514 1171,526 1149,539" fill="#2f6a50"/>
+
+  <path d="M1268 354 C1268 386, 1268 392, 1268 426" fill="none" stroke="#c5b8a7" stroke-width="4" stroke-dasharray="10 10"/>
+  <path d="M1268 644 C1268 666, 1268 676, 1268 736" fill="none" stroke="#c5b8a7" stroke-width="4" stroke-dasharray="10 10"/>
+
+  <path d="M522 638 C522 760, 1118 760, 1184 760" fill="none" stroke="#c5b8a7" stroke-width="4" stroke-dasharray="10 10"/>
+</svg>

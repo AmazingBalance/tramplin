@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fbf7ef"/>
+      <stop offset="100%" stop-color="#f1e7d8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#1f2430" flood-opacity="0.08"/>
+    </filter>
+    <style>
+      .title { font: 700 34px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #182133; }
+      .subtitle { font: 500 18px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #5f6674; }
+      .frame-title { font: 700 22px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #182133; }
+      .label { font: 500 16px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #425062; }
+      .small { font: 500 14px 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #5f6674; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" rx="36" fill="url(#bg)"/>
+  <text x="74" y="80" class="title">Концепция визуальной и структурной формы</text>
+  <text x="74" y="114" class="subtitle">Даже при раздельной разработке frontend/backend ключевые экраны зафиксированы на уровне сценариев и структуры.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="82" y="170" width="690" height="282" rx="28" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="828" y="170" width="690" height="282" rx="28" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="82" y="498" width="690" height="282" rx="28" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+    <rect x="828" y="498" width="690" height="282" rx="28" fill="#ffffff" stroke="#ddcfbe" stroke-width="3"/>
+  </g>
+
+  <text x="108" y="214" class="frame-title">1. Публичная главная страница</text>
+  <rect x="108" y="236" width="160" height="28" rx="14" fill="#ece5d6"/>
+  <text x="132" y="255" class="small">карта + лента + фильтры</text>
+  <rect x="108" y="280" width="190" height="32" rx="16" fill="#f6efe2" stroke="#d8cbb7"/>
+  <text x="126" y="301" class="small">Поиск | Теги | Зарплата | Формат</text>
+  <rect x="108" y="328" width="332" height="92" rx="18" fill="#e7eef3" stroke="#d4dde6"/>
+  <circle cx="152" cy="356" r="11" fill="#356b8c"/>
+  <circle cx="232" cy="384" r="11" fill="#b35c1e"/>
+  <circle cx="330" cy="348" r="11" fill="#2f6a50"/>
+  <circle cx="390" cy="398" r="11" fill="#7c384c"/>
+  <text x="124" y="414" class="small">Карта с маркерами вакансий и мероприятий</text>
+  <rect x="468" y="280" width="270" height="44" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="488" y="307" class="label">Карточка возможности</text>
+  <rect x="468" y="336" width="270" height="34" rx="10" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <rect x="468" y="378" width="270" height="34" rx="10" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="488" y="358" class="small">компания • формат • теги</text>
+  <text x="488" y="400" class="small">зарплата / дата / CTA</text>
+
+  <text x="854" y="214" class="frame-title">2. Кабинет соискателя</text>
+  <rect x="854" y="236" width="122" height="28" rx="14" fill="#e7f1ea"/>
+  <text x="876" y="255" class="small">карьерный трек</text>
+  <rect x="854" y="282" width="164" height="122" rx="18" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <circle cx="898" cy="324" r="24" fill="#d8e7dc"/>
+  <text x="866" y="368" class="small">Профиль и резюме</text>
+  <rect x="1040" y="282" width="202" height="50" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <rect x="1040" y="344" width="202" height="50" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="1060" y="312" class="small">История откликов</text>
+  <text x="1060" y="374" class="small">Избранное и рекомендации</text>
+  <rect x="1264" y="282" width="226" height="112" rx="18" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="1288" y="314" class="small">Приватность профиля</text>
+  <text x="1288" y="346" class="small">Контакты и нетворкинг</text>
+  <text x="1288" y="378" class="small">Видимость резюме</text>
+
+  <text x="108" y="542" class="frame-title">3. Кабинет работодателя</text>
+  <rect x="108" y="564" width="156" height="28" rx="14" fill="#f3e8df"/>
+  <text x="130" y="583" class="small">контент + отклики</text>
+  <rect x="108" y="610" width="214" height="126" rx="18" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="130" y="648" class="small">Профиль компании</text>
+  <text x="130" y="680" class="small">соцсети, медиа, бренд</text>
+  <rect x="350" y="610" width="188" height="52" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <rect x="350" y="674" width="188" height="52" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="372" y="642" class="small">Список возможностей</text>
+  <text x="372" y="706" class="small">Статусы и публикация</text>
+  <rect x="560" y="610" width="186" height="116" rx="18" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="584" y="648" class="small">Отклики соискателей</text>
+  <text x="584" y="680" class="small">review / reserve / reject</text>
+
+  <text x="854" y="542" class="frame-title">4. Кабинет куратора</text>
+  <rect x="854" y="564" width="170" height="28" rx="14" fill="#f2e4ea"/>
+  <text x="878" y="583" class="small">верификация + модерация</text>
+  <rect x="854" y="610" width="196" height="52" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <rect x="854" y="674" width="196" height="52" rx="12" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="876" y="642" class="small">Очередь verification requests</text>
+  <text x="876" y="706" class="small">Moderation cases</text>
+  <rect x="1078" y="610" width="184" height="116" rx="18" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="1100" y="648" class="small">Исправление профилей</text>
+  <text x="1100" y="680" class="small">компаний и карточек</text>
+  <rect x="1288" y="610" width="204" height="116" rx="18" fill="#f8f5ee" stroke="#d8cbb7"/>
+  <text x="1312" y="648" class="small">Администратор кураторов</text>
+  <text x="1312" y="680" class="small">инвариант одного admin</text>
+</svg>
