@@ -1,0 +1,18 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tramplinBoard" x1="38" y1="118" x2="118" y2="78" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1597A6"/>
+      <stop offset="1" stop-color="#145D66"/>
+    </linearGradient>
+    <linearGradient id="tramplinTrail" x1="90" y1="84" x2="126" y2="38" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EF9D73"/>
+      <stop offset="1" stop-color="#F4B48E"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="140" height="140" rx="44" fill="white" fill-opacity="0.18"/>
+  <path d="M38 112H82C93.899 112 104.891 105.726 110.912 95.5L118 83.5" stroke="url(#tramplinBoard)" stroke-width="15" stroke-linecap="round"/>
+  <path d="M54 112L43 136" stroke="url(#tramplinBoard)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M79 112L69 136" stroke="url(#tramplinBoard)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M93 84C98.263 68.8194 108.38 56.7874 123 48" stroke="url(#tramplinTrail)" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="128" cy="45" r="11" fill="#EF9D73"/>
+</svg>

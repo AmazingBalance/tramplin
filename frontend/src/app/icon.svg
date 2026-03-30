@@ -1,0 +1,22 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="iconBg" x1="30" y1="24" x2="210" y2="224" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFA"/>
+      <stop offset="1" stop-color="#E7F0EE"/>
+    </linearGradient>
+    <linearGradient id="iconBoard" x1="60" y1="182" x2="182" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1597A6"/>
+      <stop offset="1" stop-color="#145D66"/>
+    </linearGradient>
+    <linearGradient id="iconTrail" x1="140" y1="122" x2="194" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EF9D73"/>
+      <stop offset="1" stop-color="#F4B48E"/>
+    </linearGradient>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="72" fill="url(#iconBg)"/>
+  <path d="M60 178H126C144.38 178 161.359 168.307 170.664 152.5L182 133" stroke="url(#iconBoard)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M84 178L68 214" stroke="url(#iconBoard)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M122 178L107 214" stroke="url(#iconBoard)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M141 132C149.311 108.459 165.206 89.0878 188 75" stroke="url(#iconTrail)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="194" cy="71" r="18" fill="#EF9D73"/>
+</svg>
