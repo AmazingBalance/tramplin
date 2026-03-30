@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -41,26 +42,32 @@ type ObjectInfo struct {
 }
 
 type minioStore struct {
-	client *minio.Client
-	bucket string
+	client        *minio.Client
+	presignClient *minio.Client
+	bucket        string
 }
 
 func NewMinIO(ctx context.Context, cfg config.Config) (Store, error) {
-	client, err := minio.New(cfg.ObjectStorageEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.ObjectStorageAccessKey, cfg.ObjectStorageSecretKey, ""),
-		Secure: cfg.ObjectStorageUseSSL,
-		Region: cfg.ObjectStorageRegion,
-	})
+	internalClient, err := newMinIOClient(cfg.ObjectStorageEndpoint, cfg.ObjectStorageUseSSL, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create minio client: %w", err)
+		return nil, err
 	}
 
-	exists, err := client.BucketExists(ctx, cfg.ObjectStorageBucket)
+	presignEndpoint, presignSecure := resolvePresignEndpoint(cfg)
+	presignClient := internalClient
+	if presignEndpoint != cfg.ObjectStorageEndpoint || presignSecure != cfg.ObjectStorageUseSSL {
+		presignClient, err = newMinIOClient(presignEndpoint, presignSecure, cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	exists, err := internalClient.BucketExists(ctx, cfg.ObjectStorageBucket)
 	if err != nil {
 		return nil, fmt.Errorf("check object storage bucket: %w", err)
 	}
 	if !exists {
-		if err := client.MakeBucket(ctx, cfg.ObjectStorageBucket, minio.MakeBucketOptions{
+		if err := internalClient.MakeBucket(ctx, cfg.ObjectStorageBucket, minio.MakeBucketOptions{
 			Region: cfg.ObjectStorageRegion,
 		}); err != nil {
 			return nil, fmt.Errorf("create object storage bucket: %w", err)
@@ -68,13 +75,14 @@ func NewMinIO(ctx context.Context, cfg config.Config) (Store, error) {
 	}
 
 	return &minioStore{
-		client: client,
-		bucket: cfg.ObjectStorageBucket,
+		client:        internalClient,
+		presignClient: presignClient,
+		bucket:        cfg.ObjectStorageBucket,
 	}, nil
 }
 
 func (s *minioStore) PresignUpload(ctx context.Context, objectKey, _ string, expires time.Duration) (*PresignedUpload, error) {
-	presignedURL, err := s.client.PresignedPutObject(ctx, s.bucket, objectKey, expires)
+	presignedURL, err := s.presignClient.PresignedPutObject(ctx, s.bucket, objectKey, expires)
 	if err != nil {
 		return nil, fmt.Errorf("presign upload: %w", err)
 	}
@@ -87,7 +95,7 @@ func (s *minioStore) PresignUpload(ctx context.Context, objectKey, _ string, exp
 }
 
 func (s *minioStore) PresignDownload(ctx context.Context, objectKey string, expires time.Duration) (*PresignedDownload, error) {
-	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucket, objectKey, expires, url.Values{})
+	presignedURL, err := s.presignClient.PresignedGetObject(ctx, s.bucket, objectKey, expires, url.Values{})
 	if err != nil {
 		return nil, fmt.Errorf("presign download: %w", err)
 	}
@@ -123,4 +131,33 @@ func (s *minioStore) DeleteObject(ctx context.Context, objectKey string) error {
 func isObjectNotFound(err error) bool {
 	response := minio.ToErrorResponse(err)
 	return response.StatusCode == 404 || response.Code == "NoSuchKey" || response.Code == "NoSuchBucket"
+}
+
+func newMinIOClient(endpoint string, secure bool, cfg config.Config) (*minio.Client, error) {
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.ObjectStorageAccessKey, cfg.ObjectStorageSecretKey, ""),
+		Secure: secure,
+		Region: cfg.ObjectStorageRegion,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create minio client: %w", err)
+	}
+	return client, nil
+}
+
+func resolvePresignEndpoint(cfg config.Config) (string, bool) {
+	if cfg.ObjectStoragePublicURL == "" {
+		return cfg.ObjectStorageEndpoint, cfg.ObjectStorageUseSSL
+	}
+
+	publicURL := cfg.ObjectStoragePublicURL
+	if strings.Contains(publicURL, "://") {
+		parsed, err := url.Parse(publicURL)
+		if err != nil || parsed.Host == "" {
+			return cfg.ObjectStorageEndpoint, cfg.ObjectStorageUseSSL
+		}
+		return parsed.Host, parsed.Scheme == "https"
+	}
+
+	return publicURL, cfg.ObjectStoragePublicSSL
 }

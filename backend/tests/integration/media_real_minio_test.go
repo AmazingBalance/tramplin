@@ -28,6 +28,13 @@ func TestPublicMediaDownloadAccessRealMinIOIntegration(t *testing.T) {
 	runPublicMediaDownloadAccessIntegration(t, env)
 }
 
+func TestPublicMediaDownloadAccessRealMinIODistinctPublicURLIntegration(t *testing.T) {
+	t.Setenv("TRAMPLIN_OBJECT_STORAGE_PUBLIC_URL", "http://localhost:9000")
+
+	env := newRealMinIOIntegrationEnv(t)
+	runPublicMediaDownloadAccessIntegration(t, env)
+}
+
 func newRealMinIOIntegrationEnv(t *testing.T) *integrationEnv {
 	t.Helper()
 
